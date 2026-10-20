@@ -36,8 +36,13 @@ async function loadEvent(id) {
 function readBody(body = {}) {
   const name = clean(body.name);
   const date = clean(body.event_date, 10);
+
   if (!name) return { error: 'Event name is required' };
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: 'A valid event date is required' };
+
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { error: 'A valid event date is required' };
+  }
+
   return {
     values: [name, date, clean(body.venue, 255), clean(body.host_name), clean(body.host_phone, 50), clean(body.host_email), clean(body.notes, 5000)],
   };
@@ -53,69 +58,113 @@ router.get('/events', async (req, res, next) => {
 router.post('/events', async (req, res, next) => {
   try {
     const { error, values } = readBody(req.body);
+
     if (error) return res.status(400).json({ error });
+
     const pin = newPin();
+
     const [r] = await pool.query(
       `INSERT INTO events (name, event_date, venue, host_name, host_phone, host_email, notes, access_token, pin_hash)
        VALUES (?,?,?,?,?,?,?,?,?)`,
       [...values, newToken(), await bcrypt.hash(pin, 10)]
     );
+
     res.status(201).json({ event: present(await loadEvent(r.insertId)), pin });
-  } catch (e) { next(e); }
+  } catch (e) { 
+    next(e); 
+  }
 });
 
 router.get('/events/:id', async (req, res, next) => {
   try {
     const event = await loadEvent(req.params.id);
-    if (!event) return res.status(404).json({ error: 'Event not found' });
+
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
     res.json(present(event));
-  } catch (e) { next(e); }
+  } catch (e) { 
+    next(e); 
+  }
 });
 
 router.put('/events/:id', async (req, res, next) => {
   try {
     const { error, values } = readBody(req.body);
-    if (error) return res.status(400).json({ error });
+
+    if (error) {
+      return res.status(400).json({ error });
+    }
+
     await pool.query(
       `UPDATE events SET name=?, event_date=?, venue=?, host_name=?, host_phone=?, host_email=?, notes=? WHERE id=?`,
       [...values, req.params.id]
     );
+
     const event = await loadEvent(req.params.id);
-    if (!event) return res.status(404).json({ error: 'Event not found' });
+
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
     res.json(present(event));
-  } catch (e) { next(e); }
+  } catch (e) {
+     next(e); 
+    }
 });
 
 router.delete('/events/:id', async (req, res, next) => {
   try {
     await pool.query('DELETE FROM events WHERE id = ?', [req.params.id]);
-    res.json({ ok: true });
-  } catch (e) { next(e); }
+
+    res.json({ 
+      ok: true 
+    });
+  } catch (e) { 
+    next(e); 
+  }
 });
 
 // Turn the host/scanner access on or off
 router.post('/events/:id/access', async (req, res, next) => {
   try {
     await pool.query('UPDATE events SET access_active = ? WHERE id = ?', [req.body?.active ? 1 : 0, req.params.id]);
+
     res.json(present(await loadEvent(req.params.id)));
-  } catch (e) { next(e); }
+
+  } catch (e) {
+     next(e); 
+    }
 });
 
 // New PIN (shown once)
 router.post('/events/:id/reset-pin', async (req, res, next) => {
   try {
     const pin = newPin();
+
     await pool.query('UPDATE events SET pin_hash = ? WHERE id = ?', [await bcrypt.hash(pin, 10), req.params.id]);
-    res.json({ event: present(await loadEvent(req.params.id)), pin });
-  } catch (e) { next(e); }
+
+    res.json({ 
+      event: present(await loadEvent(req.params.id)), 
+      pin 
+    });
+
+  } catch (e) { 
+    next(e); 
+  }
 });
 
 // New link (old link stops working immediately)
 router.post('/events/:id/regenerate-link', async (req, res, next) => {
   try {
     await pool.query('UPDATE events SET access_token = ? WHERE id = ?', [newToken(), req.params.id]);
+
     res.json(present(await loadEvent(req.params.id)));
-  } catch (e) { next(e); }
+
+  } catch (e) { 
+    next(e); 
+  }
 });
 
 export default router;
