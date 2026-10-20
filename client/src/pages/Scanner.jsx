@@ -4,50 +4,87 @@ import { api, fmtTime, scannerSession } from '../api.js';
 import Camera from '../components/Camera.jsx';
 
 const THEMES = {
-  ok:          { bg: 'bg-emerald-600', icon: '✓', title: 'Valid invitation' },
-  checked_in:  { bg: 'bg-emerald-600', icon: '✓', title: 'Checked in' },
-  already:     { bg: 'bg-amber-500',   icon: '!', title: 'Already checked in' },
-  not_found:   { bg: 'bg-red-600',     icon: '✕', title: 'ID not found' },
-  wrong_event: { bg: 'bg-red-600',     icon: '✕', title: 'Different event' },
+  ok:          { bg: 'bg-ok',   fg: 'text-white',    icon: '✓', title: 'Valid invitation' },
+  partial:     { bg: 'bg-ok',   fg: 'text-white',    icon: '✓', title: 'Valid · partly used' },
+  checked_in:  { bg: 'bg-ok',   fg: 'text-white',    icon: '✓', title: 'Checked in' },
+  already:     { bg: 'bg-warn', fg: 'text-ink', icon: '!', title: 'Card fully used' },
+  too_many:    { bg: 'bg-warn', fg: 'text-ink', icon: '!', title: 'Too many people' },
+  not_found:   { bg: 'bg-bad',  fg: 'text-white',    icon: '✕', title: 'ID not found' },
+  wrong_event: { bg: 'bg-bad',  fg: 'text-white',    icon: '✕', title: 'Different event' },
 };
 
 const Row = ({ label, value }) => value ? (
-  <div className="border-b border-white/20 py-3 last:border-0"><p className="text-xs uppercase tracking-wide opacity-75">{label}</p><p className="text-xl font-semibold">{value}</p></div>
+  <div className="border-b border-current/20 py-3 last:border-0">
+    <p className="text-xs uppercase tracking-widest opacity-75">{label}</p>
+    <p className="text-xl font-semibold">{value}</p>
+  </div>
 ) : null;
 
-function ResultScreen({ result, busy, onConfirm, onNext }) {
+const people = (n) => `${n} ${n === 1 ? 'person' : 'people'}`;
+
+function ResultScreen({ result, count, setCount, busy, onConfirm, onNext }) {
   const t = THEMES[result.status];
   const g = result.guest;
+  const canAdmit = result.status === 'ok' || result.status === 'partial';
+
   return (
-    <div className={`fixed inset-0 z-40 flex flex-col overflow-y-auto ${t.bg} p-5 text-white`}>
+    <div className={`fixed inset-0 z-40 flex flex-col overflow-y-auto ${t.bg} ${t.fg} p-5`}>
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
-        <div className="pt-6 text-center">
-          <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-white/20 text-5xl font-bold">{t.icon}</div>
-          <h1 className="mt-3 text-2xl font-bold">{t.title}</h1>
+        <div className="pt-4 text-center">
+          <div className="mx-auto grid h-16 w-16 place-items-center rounded-full border-4 border-current text-3xl font-bold">{t.icon}</div>
+          <h1 className="mt-3 font-display text-3xl font-bold leading-tight">{t.title}</h1>
           {result.code && <p className="mt-1 font-mono text-lg tracking-widest opacity-90">{result.code}</p>}
         </div>
 
         {g && (
-          <div className="mt-6 rounded-2xl bg-white/15 px-4">
-            <Row label="Name" value={g.full_name} />
-            <Row label="Phone" value={g.phone} />
-            <Row label="Category" value={g.category} />
-            <Row label="Table" value={g.table_no} />
-            {result.status === 'already' && <Row label="Arrived at" value={fmtTime(g.checked_in_at)} />}
+          <>
+            <div className="mt-5 rounded-lg bg-black/15 px-4 py-3 text-center">
+              <p className="text-xs uppercase tracking-widest opacity-80">{g.card_type === 'double' ? 'Double card' : 'Single card'}</p>
+              <p className="font-display text-2xl font-bold">
+                {result.status === 'already' ? `All ${g.capacity} spot${g.capacity > 1 ? 's' : ''} used` : `Admit up to ${g.remaining}`}
+              </p>
+              {g.capacity > 1 && <p className="text-sm opacity-90">{g.admitted_count} of {g.capacity} already inside</p>}
+            </div>
+            <div className="mt-3 rounded-lg bg-black/15 px-4">
+              <Row label="Name" value={g.full_name} />
+              <Row label="Phone" value={g.phone} />
+              <Row label="Category" value={g.category} />
+              <Row label="Table" value={g.table_no} />
+              {result.status === 'already' && <Row label="First arrived" value={fmtTime(g.checked_in_at)} />}
+            </div>
+          </>
+        )}
+
+        {canAdmit && g.remaining > 1 && (
+          <div className="mt-4">
+            <p className="text-center text-xs font-semibold uppercase tracking-widest">How many people are entering now?</p>
+            <div className="mt-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${g.remaining}, minmax(0, 1fr))` }}>
+              {Array.from({ length: g.remaining }, (_, i) => i + 1).map((n) => (
+                <button key={n} onClick={() => setCount(n)} className={`rounded-lg py-4 text-3xl font-bold ${count === n ? 'bg-white text-ok' : 'bg-black/15'}`}>{n}</button>
+              ))}
+            </div>
           </div>
         )}
+
+        {result.status === 'checked_in' && (
+          <p className="mt-4 text-center text-lg">
+            Admitted {people(result.admitted_now)}.{' '}
+            {g.remaining > 0 ? `${people(g.remaining)} more can still enter on this card.` : 'This card is now fully used.'}
+          </p>
+        )}
+        {result.status === 'already' && <p className="mt-4 text-center text-lg font-medium">Do not admit anyone else on this card.</p>}
+        {result.status === 'too_many' && <p className="mt-4 text-center text-lg font-medium">Only {people(g.remaining)} can still enter on this card.</p>}
         {result.status === 'not_found' && <p className="mt-6 text-center text-lg">This ID is not on the guest list. Check the ID and try again.</p>}
         {result.status === 'wrong_event' && <p className="mt-6 text-center text-lg">This ID belongs to a different event.</p>}
-        {result.status === 'already' && <p className="mt-4 text-center">This invitation was already used. Verify the person's identity.</p>}
 
-        <div className="mt-auto space-y-3 pt-6 pb-[env(safe-area-inset-bottom)]">
-          {result.status === 'ok' && (
-            <button onClick={onConfirm} disabled={busy} className="w-full rounded-2xl bg-white py-4 text-lg font-bold text-emerald-700 shadow disabled:opacity-60">
-              {busy ? 'Saving…' : 'Confirm check-in'}
+        <div className="mt-auto space-y-3 pb-[env(safe-area-inset-bottom)] pt-6">
+          {canAdmit && (
+            <button onClick={onConfirm} disabled={busy} className="w-full rounded-lg bg-white py-4 text-lg font-bold text-ink disabled:opacity-60">
+              {busy ? 'Saving…' : `Admit ${people(count)}`}
             </button>
           )}
-          <button onClick={onNext} className={`w-full rounded-2xl py-4 text-lg font-bold ${result.status === 'ok' ? 'bg-white/20' : 'bg-white text-slate-800'}`}>
-            {result.status === 'ok' ? 'Cancel' : 'Scan next'}
+          <button onClick={onNext} className={`w-full rounded-lg py-4 text-lg font-bold ${canAdmit ? 'bg-black/15' : 'bg-teal text-white'}`}>
+            {canAdmit ? 'Cancel' : 'Scan next'}
           </button>
         </div>
       </div>
@@ -61,6 +98,7 @@ export default function Scanner() {
   const [info, setInfo] = useState(null);
   const [tab, setTab] = useState('scan');
   const [result, setResult] = useState(null);
+  const [count, setCount] = useState(1);
   const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState('');
   const [error, setError] = useState('');
@@ -71,19 +109,19 @@ export default function Scanner() {
 
   const lookup = async (code) => {
     setBusy(true); setError('');
-    try { setResult(await api.post('/scan/lookup', { code }, 'scanner')); }
+    try { setCount(1); setResult(await api.post('/scan/lookup', { code }, 'scanner')); }
     catch (e) { setError(e.message); }
     finally { setBusy(false); }
   };
 
   const confirm = async () => {
     setBusy(true);
-    try { setResult(await api.post('/scan/checkin', { code: result.code }, 'scanner')); loadInfo(); }
+    try { setResult(await api.post('/scan/checkin', { code: result.code, count }, 'scanner')); loadInfo(); }
     catch (e) { setError(e.message); }
     finally { setBusy(false); }
   };
 
-  const next = () => { setResult(null); setManual(''); setError(''); };
+  const next = () => { setResult(null); setManual(''); setError(''); setCount(1); };
 
   const onManualChange = (v) => {
     const raw = v.toUpperCase().replace(/[^0-9A-F]/g, '').slice(0, 6);
@@ -93,37 +131,37 @@ export default function Scanner() {
   const pct = info?.total ? Math.round((info.arrived / info.total) * 100) : 0;
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col">
-      <header className="bg-indigo-600 px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] text-white">
+    <div className="mx-auto flex min-h-screen max-w-md flex-col bg-mist-50">
+      <header className="bg-teal px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] text-white">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wide opacity-75">Check-in</p>
-            <h1 className="truncate text-lg font-bold">{info?.name || session.eventName}</h1>
+            <p className="text-xs uppercase tracking-widest text-white/80">Check-in</p>
+            <h1 className="truncate font-display text-xl font-bold">{info?.name || session.eventName}</h1>
           </div>
-          <button className="rounded-lg bg-white/15 px-3 py-1.5 text-sm font-medium" onClick={() => { scannerSession.clear(); nav(`/e/${session.accessToken}`); }}>Log out</button>
+          <button className="rounded-md border border-white/40 px-3 py-1.5 text-sm font-medium text-white" onClick={() => { scannerSession.clear(); nav(`/e/${session.accessToken}`); }}>Log out</button>
         </div>
         {info && (
           <div className="mt-3">
-            <div className="flex justify-between text-sm"><span><b className="text-lg">{info.arrived}</b> of {info.total} arrived</span><span className="opacity-80">{pct}%</span></div>
-            <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/20"><div className="h-full bg-emerald-400 transition-all" style={{ width: `${pct}%` }} /></div>
+            <div className="flex justify-between text-sm"><span><b className="text-xl">{info.arrived}</b> of {info.total} people in</span><span className="text-white/80">{pct}%</span></div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/25"><div className="h-full bg-sky transition-all" style={{ width: `${pct}%` }} /></div>
           </div>
         )}
       </header>
 
-      <div className="grid grid-cols-2 border-b border-slate-200 bg-white text-sm font-semibold">
+      <div className="grid grid-cols-2 border-b border-mist bg-white text-sm font-semibold">
         {[['scan', 'Scan QR'], ['manual', 'Enter ID']].map(([k, label]) => (
-          <button key={k} onClick={() => { setTab(k); setError(''); }} className={`py-3 ${tab === k ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-slate-500'}`}>{label}</button>
+          <button key={k} onClick={() => { setTab(k); setError(''); }} className={`py-3 ${tab === k ? 'border-b-2 border-teal text-ink' : 'text-steel'}`}>{label}</button>
         ))}
       </div>
 
       <main className="flex-1 p-4">
-        {error && <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        {error && <p className="mb-3 rounded-md bg-bad-light p-3 text-sm text-bad">{error}</p>}
 
         {tab === 'scan' && !result && <Camera onCode={lookup} />}
 
         {tab === 'manual' && (
           <form onSubmit={(e) => { e.preventDefault(); lookup(manual); }} className="space-y-4 pt-4">
-            <p className="text-sm text-slate-600">For guests without a smartphone: type the 6-character ID from their invitation.</p>
+            <p className="text-sm text-steel">For guests without a smartphone: type the 6-character ID from their invitation.</p>
             <input
               className="input py-4 text-center font-mono text-4xl font-bold uppercase tracking-widest"
               placeholder="A3F-9C2" value={manual} onChange={(e) => onManualChange(e.target.value)}
@@ -134,7 +172,7 @@ export default function Scanner() {
         )}
       </main>
 
-      {result && <ResultScreen result={result} busy={busy} onConfirm={confirm} onNext={next} />}
+      {result && <ResultScreen result={result} count={count} setCount={setCount} busy={busy} onConfirm={confirm} onNext={next} />}
     </div>
   );
 }

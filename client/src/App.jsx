@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { adminSession } from './api.js';
+import Brand from './components/Brand.jsx';
 import AdminLogin from './pages/AdminLogin.jsx';
 import Events from './pages/Events.jsx';
 import EventDetail from './pages/EventDetail.jsx';
@@ -11,11 +12,10 @@ const AdminOnly = ({ children }) => (adminSession.get() ? children : <Navigate t
 
 function Landing() {
   return (
-    <div className="grid min-h-screen place-items-center p-6 text-center">
+    <div className="grid min-h-screen place-items-center bg-teal p-6 text-center text-white">
       <div>
-        <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-indigo-600 text-2xl text-white">✓</div>
-        <h1 className="text-xl font-bold">Event Check-in</h1>
-        <p className="mt-2 text-sm text-slate-500">Please open the event link you were given.</p>
+        <Brand className="text-2xl text-white" />
+        <p className="mt-3 text-sm text-white/80">Please open the event link you were given.</p>
       </div>
     </div>
   );

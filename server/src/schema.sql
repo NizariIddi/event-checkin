@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS guests (
   phone VARCHAR(50) NULL,
   category VARCHAR(80) NULL,
   table_no VARCHAR(40) NULL,
+  card_type ENUM('single','double') NOT NULL DEFAULT 'single',
+  admitted_count TINYINT UNSIGNED NOT NULL DEFAULT 0,
   checked_in_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_guest_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,

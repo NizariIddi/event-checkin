@@ -33,3 +33,11 @@ export const clean = (v, max = 190) => {
   const s = String(v).trim();
   return s ? s.slice(0, max) : null;
 };
+
+/** single = 1 person, double = up to 2 people */
+export const capacityOf = (cardType) => (cardType === 'double' ? 2 : 1);
+
+export function parseCardType(v) {
+  const s = String(v ?? '').trim().toLowerCase();
+  return ['double', '2', 'couple', 'plus one', 'plus_one', '+1'].includes(s) ? 'double' : 'single';
+}

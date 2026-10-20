@@ -15,6 +15,15 @@ Invitation IDs + QR codes + mobile scanner, for multiple events (up to 1000 gues
    - Green = valid (details shown, tap *Confirm check-in*), Orange = already checked in, Red = not found / other event.
 5. Scanners only see check-in results – never the guest list.
 
+## Card types (single / double)
+
+- **Single** = admits 1 person. **Double** = admits up to 2 people. You choose the type per guest (or via the `card_type` column in CSV).
+- The server enforces the limit: a card can never admit more people than its capacity, even with several scanners at once.
+- At the door the scanner sees **"Admit up to N"** and taps how many people are entering now. A couple can arrive separately
+  (1 now, 1 later) and the card stays valid until all spots are used.
+- Stats count **people** (a double card = 2 expected people). The 1000 limit counts cards.
+- Upgrading an existing database? Run `npm run db:setup` again: it adds the new columns safely.
+
 ## Setup
 
 Requirements: Node.js 18+ and MySQL 8 (or MariaDB 10.5+).

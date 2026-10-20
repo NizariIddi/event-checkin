@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { api, adminSession } from '../api.js';
+import Brand from '../components/Brand.jsx';
 
 export default function AdminLogin() {
   const nav = useNavigate();
@@ -22,16 +23,13 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="grid min-h-screen place-items-center p-4">
-      <form onSubmit={submit} className="card w-full max-w-sm space-y-4 p-6">
-        <div className="text-center">
-          <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-xl bg-indigo-600 text-xl text-white">✓</div>
-          <h1 className="text-xl font-bold">Admin login</h1>
-        </div>
-        {error && <p className="rounded-lg bg-red-50 p-2 text-center text-sm text-red-700">{error}</p>}
+    <div className="grid min-h-screen place-items-center bg-teal p-4">
+      <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-lg bg-mist-50 p-6">
+        <div className="text-center"><Brand className="text-2xl" /><p className="mt-1 text-sm text-steel">Admin sign in</p></div>
+        {error && <p className="rounded-md bg-bad-light p-2 text-center text-sm text-bad">{error}</p>}
         <div><label className="label">Email</label><input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus /></div>
         <div><label className="label">Password</label><input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
-        <button className="btn btn-primary w-full" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
+        <button className="btn btn-primary w-full py-2.5" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
       </form>
     </div>
   );

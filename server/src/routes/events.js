@@ -12,6 +12,7 @@ const present = (e) => {
   const { pin_hash, ...rest } = e;
   return {
     ...rest,
+    total_cards: Number(e.total_cards || 0),
     total_guests: Number(e.total_guests || 0),
     arrived: Number(e.arrived || 0),
     access_active: !!e.access_active,
@@ -22,8 +23,9 @@ const present = (e) => {
 };
 
 const SELECT_WITH_STATS = `
-  SELECT e.*, COUNT(g.id) AS total_guests,
-         COALESCE(SUM(g.checked_in_at IS NOT NULL), 0) AS arrived
+  SELECT e.*, COUNT(g.id) AS total_cards,
+         COALESCE(SUM(CASE WHEN g.card_type = 'double' THEN 2 ELSE 1 END), 0) AS total_guests,
+         COALESCE(SUM(g.admitted_count), 0) AS arrived
   FROM events e LEFT JOIN guests g ON g.event_id = e.id`;
 
 async function loadEvent(id) {

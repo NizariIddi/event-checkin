@@ -15,7 +15,7 @@ export default function EventForm({ initial, onSubmit, onCancel, submitLabel = '
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-bad-light p-2 text-sm text-bad">{error}</p>}
       <div><label className="label">Event name *</label><input className="input" value={f.name} onChange={set('name')} required autoFocus /></div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div><label className="label">Date *</label><input type="date" className="input" value={f.event_date} onChange={set('event_date')} required /></div>

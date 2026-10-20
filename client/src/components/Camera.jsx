@@ -26,9 +26,9 @@ export default function Camera({ onCode }) {
 
   return (
     <div>
-      <div id="qr-reader" className="min-h-[300px] w-full overflow-hidden rounded-2xl bg-black" />
-      {error && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{error}</p>}
-      {!error && <p className="mt-3 text-center text-sm text-slate-500">Point the camera at the guest's QR code</p>}
+      <div id="qr-reader" className="min-h-[300px] w-full overflow-hidden rounded-lg bg-black" />
+      {error && <p className="mt-3 rounded-lg bg-warn-light p-3 text-sm text-ink">{error}</p>}
+      {!error && <p className="mt-3 text-center text-sm text-steel">Point the camera at the guest's QR code</p>}
     </div>
   );
 }

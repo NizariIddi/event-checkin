@@ -27,27 +27,27 @@ export default function Events() {
         <button className="btn btn-primary" onClick={() => setCreating(true)}>+ New event</button>
       </div>
 
-      {error && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-      {!events && !error && <p className="text-slate-500">Loading…</p>}
+      {error && <p className="mb-4 rounded-lg bg-bad-light p-3 text-sm text-bad">{error}</p>}
+      {!events && !error && <p className="text-steel">Loading…</p>}
       {events?.length === 0 && (
-        <div className="card p-10 text-center text-slate-500">No events yet. Create your first one to start adding guests.</div>
+        <div className="card p-10 text-center text-steel">No events yet. Create your first one to start adding guests.</div>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {events?.map((e) => {
           const pct = e.total_guests ? Math.round((e.arrived / e.total_guests) * 100) : 0;
           return (
-            <Link key={e.id} to={`/admin/events/${e.id}`} className="card block p-4 transition hover:border-indigo-400 hover:shadow">
+            <Link key={e.id} to={`/admin/events/${e.id}`} className="card block p-4 transition hover:border-teal hover:shadow">
               <div className="flex items-start justify-between gap-2">
                 <h3 className="font-bold leading-tight">{e.name}</h3>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${e.access_open ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${e.access_open ? 'bg-ok-light text-ok' : 'bg-mist text-steel-dark'}`}>
                   {e.access_open ? 'Link active' : 'Link closed'}
                 </span>
               </div>
-              <p className="mt-1 text-sm text-slate-500">{fmtDate(e.event_date)}{e.venue ? ` · ${e.venue}` : ''}</p>
-              {e.host_name && <p className="text-sm text-slate-500">Host: {e.host_name}</p>}
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full bg-emerald-500" style={{ width: `${pct}%` }} /></div>
-              <p className="mt-1 text-xs text-slate-500">{e.arrived} of {e.total_guests} arrived</p>
+              <p className="mt-1 text-sm text-steel">{fmtDate(e.event_date)}{e.venue ? ` · ${e.venue}` : ''}</p>
+              {e.host_name && <p className="text-sm text-steel">Host: {e.host_name}</p>}
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-mist-100"><div className="h-full bg-ok" style={{ width: `${pct}%` }} /></div>
+              <p className="mt-1 text-xs text-steel">{e.arrived} of {e.total_guests} people arrived · {e.total_cards} cards</p>
             </Link>
           );
         })}
@@ -60,8 +60,8 @@ export default function Events() {
       )}
 
       {created && (
-        <Modal title="Event created 🎉" onClose={() => setCreated(null)}>
-          <p className="mb-4 text-sm text-slate-600">Give the host this link and PIN. <b>The PIN is shown only once</b> — you can reset it later if lost.</p>
+        <Modal title="Event created" onClose={() => setCreated(null)}>
+          <p className="mb-4 text-sm text-steel-dark">Give the host this link and PIN. <b>The PIN is shown only once</b> — you can reset it later if lost.</p>
           <div className="space-y-3">
             <CopyField label="Login link" value={created.event.access_url} />
             <CopyField label="PIN" value={created.pin} />
