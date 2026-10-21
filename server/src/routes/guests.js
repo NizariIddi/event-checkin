@@ -7,6 +7,7 @@ import { pool } from '../db.js';
 import { config } from '../config.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { generateCode, clean, capacityOf, parseCardType, normName, normPhone } from '../utils.js';
+import { renderCard, cardFileName } from '../card.js';
 
 const router = Router();
 router.use(requireAdmin);
@@ -207,6 +208,38 @@ router.get('/events/:id/qr.zip', async (req, res, next) => {
     archive.pipe(res);
     for (const g of guests) {
       archive.append(await QRCode.toBuffer(g.code, QR_OPTS), { name: `${g.code}_${slug(g.full_name)}.png` });
+    }
+    await archive.finalize();
+  } catch (e) { next(e); }
+});
+
+// ---------- Invitation cards (design + guest name + QR) ----------
+router.get('/guests/:id/card.jpg', async (req, res, next) => {
+  try {
+    const [rows] = await pool.query('SELECT code, full_name FROM guests WHERE id = ?', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Guest not found' });
+    const jpg = await renderCard({ name: rows[0].full_name, code: rows[0].code });
+    res.set('Cache-Control', 'no-store');
+    if (req.query.download) res.attachment(cardFileName(rows[0]));
+    res.type('jpeg').send(jpg);
+  } catch (e) { next(e); }
+});
+
+router.get('/events/:id/cards.zip', async (req, res, next) => {
+  try {
+    const event = await eventExists(req.params.id);
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+    const [guests] = await pool.query('SELECT code, full_name FROM guests WHERE event_id = ? ORDER BY full_name', [req.params.id]);
+    res.attachment(`${slug(event.name)}_invitation_cards.zip`);
+    const archive = archiver('zip', { store: true });   // JPEGs are already compressed
+    archive.on('error', next);
+    archive.pipe(res);
+    for (const g of guests) {
+      if (res.destroyed) break;                          // the admin closed the download
+      const jpg = await renderCard({ name: g.full_name, code: g.code });
+      const added = new Promise((resolve) => archive.once('entry', resolve));
+      archive.append(jpg, { name: cardFileName(g) });
+      await added;                                       // one card at a time keeps memory low
     }
     await archive.finalize();
   } catch (e) { next(e); }

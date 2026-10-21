@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { loadImage, createCanvas } from '@napi-rs/canvas';
+import jsQR from 'jsqr';
 
 const PORT = process.env.TEST_PORT || '5077';
 const BASE = `http://127.0.0.1:${PORT}/api`;
@@ -235,4 +237,86 @@ test('a double-click (two imports at the same moment) still gives no duplicates'
   assert.ok(results.every((r) => r.status === 200 || r.status === 409));
   assert.equal(await guestCount(ev.id), 40);
   await admin('DELETE', `/admin/events/${ev.id}`);
+});
+
+// ---------- Invitation cards ----------
+async function getBinary(url, token = adminToken) {
+  const res = await fetch(BASE + url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  return { status: res.status, type: res.headers.get('content-type'), disposition: res.headers.get('content-disposition'), buf: Buffer.from(await res.arrayBuffer()) };
+}
+async function readQr(jpegBuffer) {                                  // reads the QR code from a card image
+  const img = await loadImage(jpegBuffer);
+  const canvas = createCanvas(img.width, img.height);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, img.width, img.height);
+  return { text: jsQR(d.data, d.width, d.height)?.data, width: img.width, height: img.height };
+}
+async function newGuest(eventId, name, card_type = 'single') {
+  const r = await admin('POST', `/admin/events/${eventId}/guests`, { full_name: name, card_type });
+  assert.equal(r.status, 201);
+  return { id: r.data.id, code: r.data.code };
+}
+const today = () => new Date().toISOString().slice(0, 10);
+
+test('invitation card: needs an admin login', async () => {
+  const g = await newGuest(event.id, 'Card Person');
+  assert.equal((await getBinary(`/admin/guests/${g.id}/card.jpg`, null)).status, 401);
+  assert.equal((await getBinary(`/admin/guests/${g.id}/card.jpg`, scannerToken)).status, 401);
+});
+
+test('invitation card: is a full-size JPEG whose QR code is the guest ID', async () => {
+  const g = await newGuest(event.id, 'Amina Salum', 'double');
+  const r = await getBinary(`/admin/guests/${g.id}/card.jpg`);
+  assert.equal(r.status, 200);
+  assert.match(r.type, /image\/jpeg/);
+  assert.equal(r.buf[0], 0xff); assert.equal(r.buf[1], 0xd8);       // JPEG signature
+  const qr = await readQr(r.buf);
+  assert.equal(qr.width, 1191); assert.equal(qr.height, 1677);       // A6 at about 290 dpi
+  assert.equal(qr.text, g.code, 'the QR on the card must contain the guest ID');
+});
+
+test('invitation card: download option names the file with the ID and name', async () => {
+  const g = await newGuest(event.id, 'Neema Peter');
+  const r = await getBinary(`/admin/guests/${g.id}/card.jpg?download=1`);
+  assert.match(r.disposition, new RegExp(`attachment; filename="${g.code}_Neema_Peter\\.jpg"`));
+});
+
+test('invitation card: very long names, accents and symbols still produce a scannable card', async () => {
+  for (const name of ['Zéphyrine Ngô & Familia Yote Wapendwa Wa Kijiji Cha Mbezi Beach Dar es Salaam', 'W'.repeat(180), 'Ali']) {
+    const g = await newGuest(event.id, name);
+    const r = await getBinary(`/admin/guests/${g.id}/card.jpg`);
+    assert.equal(r.status, 200);
+    assert.equal((await readQr(r.buf)).text, g.code);
+  }
+});
+
+test('invitation card: changes when the guest name is edited', async () => {
+  const g = await newGuest(event.id, 'Old Name');
+  const before = (await getBinary(`/admin/guests/${g.id}/card.jpg`)).buf;
+  await admin('PUT', `/admin/guests/${g.id}`, { full_name: 'New Name', card_type: 'single' });
+  const after = (await getBinary(`/admin/guests/${g.id}/card.jpg`)).buf;
+  assert.notDeepEqual(before, after);
+});
+
+test('invitation card: unknown guest gives 404', async () => {
+  assert.equal((await getBinary('/admin/guests/99999999/card.jpg')).status, 404);
+});
+
+test('cards ZIP: one JPEG per guest, named with the ID', async () => {
+  const ev = (await admin('POST', '/admin/events', { name: 'Cards ZIP test', event_date: today() })).data.event;
+  const guests = [await newGuest(ev.id, 'Asha Juma'), await newGuest(ev.id, 'Baraka Said', 'double'), await newGuest(ev.id, 'Neema Peter')];
+  const r = await getBinary(`/admin/events/${ev.id}/cards.zip`);
+  assert.equal(r.status, 200);
+  assert.match(r.type, /zip/);
+  assert.equal(r.buf.subarray(0, 2).toString(), 'PK');
+  const eocd = r.buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));   // end-of-zip record
+  assert.equal(r.buf.readUInt16LE(eocd + 10), 3, 'the ZIP should hold 3 cards');
+  for (const g of guests) assert.ok(r.buf.includes(Buffer.from(`${g.code}_`)), `card for ${g.code} is missing`);
+  assert.equal((await getBinary(`/admin/events/${ev.id}/cards.zip`, null)).status, 401);
+  await admin('DELETE', `/admin/events/${ev.id}`);
+});
+
+test('cards ZIP: unknown event gives 404', async () => {
+  assert.equal((await getBinary('/admin/events/99999999/cards.zip')).status, 404);
 });

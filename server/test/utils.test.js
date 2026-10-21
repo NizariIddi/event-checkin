@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { config } from '../src/config.js';
 import { generateCode, normalizeCode, capacityOf, parseCardType, clean, eventExpiry, isEventAccessOpen, normName, normPhone, isSameGuest } from '../src/utils.js';
 
 test('generateCode makes IDs like A3F-9C2', () => {
@@ -38,7 +39,10 @@ test('clean trims, limits length and returns null for empty', () => {
 });
 
 test('event link stays open until the end of the day after the event', () => {
-  const day = (offset) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+  // "today" must be worked out in the app's own timezone (APP_TZ_OFFSET), not UTC
+  const [, sign, hh, mm] = config.tzOffset.match(/([+-])(\d\d):(\d\d)/);
+  const offsetMs = (sign === '-' ? -1 : 1) * (Number(hh) * 60 + Number(mm)) * 60000;
+  const day = (offset) => new Date(Date.now() + offsetMs + offset * 86400000).toISOString().slice(0, 10);
   assert.equal(isEventAccessOpen({ access_active: 1, event_date: day(0) }), true);   // today
   assert.equal(isEventAccessOpen({ access_active: 1, event_date: day(-1) }), true);  // yesterday: still open
   assert.equal(isEventAccessOpen({ access_active: 1, event_date: day(-3) }), false); // long past

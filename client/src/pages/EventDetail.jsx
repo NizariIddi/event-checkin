@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, downloadFile, fmtDate, fmtTime } from '../api.js';
+import CardModal from '../components/CardModal.jsx';
 import AdminLayout from '../components/AdminLayout.jsx';
 import Modal from '../components/Modal.jsx';
 import EventForm from '../components/EventForm.jsx';
@@ -165,6 +166,7 @@ export default function EventDetail() {
           <button className="btn btn-secondary" disabled={busy === 'import'} onClick={() => fileRef.current.click()}>{busy === 'import' ? 'Importing…' : 'Import CSV'}</button>
           <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={onImport} />
           <button className="btn btn-secondary" disabled={!guests.length || busy === 'zip'} onClick={() => run('zip', () => downloadFile(`/admin/events/${id}/qr.zip`, 'qr_codes.zip'))}>{busy === 'zip' ? 'Preparing…' : 'QR ZIP'}</button>
+          <button className="btn btn-secondary" disabled={!guests.length || busy === 'cards'} onClick={() => run('cards', () => downloadFile(`/admin/events/${id}/cards.zip`, 'invitation_cards.zip'))}>{busy === 'cards' ? 'Preparing…' : 'Cards ZIP'}</button>
           <Link to={`/admin/events/${id}/print`} className={`btn btn-secondary ${!guests.length ? 'pointer-events-none opacity-50' : ''}`}>Print sheet</Link>
           <button className="btn btn-secondary" disabled={!guests.length} onClick={() => run('csv', () => downloadFile(`/admin/events/${id}/export.csv`, 'guests.csv'))}>Export CSV</button>
         </div>
@@ -198,6 +200,7 @@ export default function EventDetail() {
                   </td>
                   <td className="whitespace-nowrap px-4 py-2 text-right">
                     <button className="px-2 text-teal-dark hover:underline" onClick={() => setModal({ type: 'qr', guest: g })}>QR</button>
+                    <button className="px-2 text-teal-dark hover:underline" onClick={() => setModal({ type: 'card', guest: g })}>Card</button>
                     <button className="px-2 text-teal-dark hover:underline" onClick={() => setModal({ type: 'guest', guest: g })}>Edit</button>
                     {g.admitted_count > 0 && <button className="px-2 text-warn hover:underline" onClick={() => confirm(`Undo check-in for ${g.full_name}?`) && run('undo', async () => { await api.post(`/admin/guests/${g.id}/undo-checkin`, {}, 'admin'); load(); })}>Undo</button>}
                     <button className="px-2 text-bad hover:underline" onClick={() => confirm(`Delete ${g.full_name}?`) && run('gdel', async () => { await api.del(`/admin/guests/${g.id}`, 'admin'); load(); })}>Delete</button>
@@ -231,10 +234,13 @@ export default function EventDetail() {
           </div>
           <div className="mt-5 flex justify-end gap-2">
             <button className="btn btn-secondary" onClick={() => downloadFile(`/admin/guests/${modal.guest.id}/qr.png`, `${modal.guest.code}.png`)}>Download PNG</button>
+            <button className="btn btn-secondary" onClick={() => setModal({ type: 'card', guest: modal.guest })}>View card</button>
             <button className="btn btn-primary" onClick={() => setModal(null)}>Done</button>
           </div>
         </Modal>
       )}
+
+      {modal?.type === 'card' && <CardModal guest={modal.guest} onClose={() => setModal(null)} />}
 
       {newPin && (
         <Modal title="New PIN" onClose={() => setNewPin(null)}>
