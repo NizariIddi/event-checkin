@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateCode, normalizeCode, capacityOf, parseCardType, clean, eventExpiry, isEventAccessOpen } from '../src/utils.js';
+import { generateCode, normalizeCode, capacityOf, parseCardType, clean, eventExpiry, isEventAccessOpen, normName, normPhone, isSameGuest } from '../src/utils.js';
 
 test('generateCode makes IDs like A3F-9C2', () => {
   for (let i = 0; i < 50; i++) assert.match(generateCode(), /^[0-9A-F]{3}-[0-9A-F]{3}$/);
@@ -44,4 +44,24 @@ test('event link stays open until the end of the day after the event', () => {
   assert.equal(isEventAccessOpen({ access_active: 1, event_date: day(-3) }), false); // long past
   assert.equal(isEventAccessOpen({ access_active: 0, event_date: day(0) }), false);  // switched off
   assert.ok(eventExpiry({ event_date: '2030-01-01' }) instanceof Date);
+});
+
+test('names are compared ignoring capitals, extra spaces and accents', () => {
+  assert.equal(normName('  JOHN   Mwakyusa '), 'john mwakyusa');
+  assert.equal(normName('José'), 'jose');
+});
+
+test('phone numbers match across formats', () => {
+  assert.equal(normPhone('0712 345 678'), '712345678');
+  assert.equal(normPhone('+255 712-345-678'), '712345678');
+  assert.equal(normPhone('255712345678'), '712345678');
+  assert.equal(normPhone(''), '');
+  assert.equal(normPhone(null), '');
+});
+
+test('same guest = same name and same (or missing) phone', () => {
+  assert.equal(isSameGuest({ full_name: 'Asha Juma', phone: '0712345678' }, { full_name: 'ASHA  juma', phone: '+255712345678' }), true);
+  assert.equal(isSameGuest({ full_name: 'Asha Juma', phone: '' }, { full_name: 'Asha Juma', phone: '0712345678' }), true);
+  assert.equal(isSameGuest({ full_name: 'Asha Juma', phone: '0712345678' }, { full_name: 'Asha Juma', phone: '0755000111' }), false); // two different Ashas
+  assert.equal(isSameGuest({ full_name: 'Asha Juma', phone: '0712345678' }, { full_name: 'Baraka Juma', phone: '0712345678' }), false); // family sharing a phone
 });

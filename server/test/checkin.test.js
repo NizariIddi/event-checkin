@@ -170,3 +170,69 @@ test('event stats count people, not cards', async () => {
   assert.ok(info.data.total >= info.data.cards);
   assert.ok(info.data.arrived <= info.data.total);
 });
+
+// ---------- CSV import: no duplicates ----------
+async function importCsv(eventId, csv) {
+  const fd = new FormData();
+  fd.append('file', new Blob([csv], { type: 'text/csv' }), 'guests.csv');
+  const res = await fetch(`${BASE}/admin/events/${eventId}/import`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}` }, body: fd });
+  return { status: res.status, data: await res.json() };
+}
+const guestCount = async (eventId) => (await admin('GET', `/admin/events/${eventId}/guests`)).data.length;
+
+test('importing the same CSV again does not add duplicates', async () => {
+  const ev = (await admin('POST', '/admin/events', { name: 'Import test', event_date: new Date().toISOString().slice(0, 10) })).data.event;
+  const csv = 'full_name,phone,card_type\nAsha Juma,0712345678,single\nBaraka Said,0755111222,double\nNeema Peter,,single\n';
+
+  const first = await importCsv(ev.id, csv);
+  assert.equal(first.data.imported, 3);
+  assert.equal(first.data.skipped.length, 0);
+
+  for (let i = 0; i < 3; i++) {                                  // 2nd, 3rd and 4th import
+    const again = await importCsv(ev.id, csv);
+    assert.equal(again.status, 200);
+    assert.equal(again.data.imported, 0);
+    assert.equal(again.data.skipped.length, 3);
+    assert.match(again.data.skipped[0].reason, /Already on the list \(ID [0-9A-F]{3}-[0-9A-F]{3}\)/);
+  }
+  assert.equal(await guestCount(ev.id), 3);
+  await admin('DELETE', `/admin/events/${ev.id}`);
+});
+
+test('import adds only the new guests and spots the same person written differently', async () => {
+  const ev = (await admin('POST', '/admin/events', { name: 'Import test 2', event_date: new Date().toISOString().slice(0, 10) })).data.event;
+  await importCsv(ev.id, 'full_name,phone\nAsha Juma,0712345678\n');
+
+  const r = await importCsv(ev.id, [
+    'full_name,phone',
+    'ASHA   juma,+255 712 345 678',   // same person, different writing -> skipped
+    'Asha Juma,0755000111',            // same name, different phone -> a different Asha -> added
+    'Zawadi Ali,0700000001',           // new -> added
+    'Zawadi Ali,0700000001',           // repeated inside the file -> skipped
+  ].join('\n'));
+  assert.equal(r.data.imported, 2);
+  assert.equal(r.data.skipped.length, 2);
+  assert.equal(r.data.skipped[1].reason, 'Appears more than once in this file');
+  assert.equal(await guestCount(ev.id), 3);
+  await admin('DELETE', `/admin/events/${ev.id}`);
+});
+
+test('the same name in two different events is not a duplicate', async () => {
+  const day = new Date().toISOString().slice(0, 10);
+  const a = (await admin('POST', '/admin/events', { name: 'Event A', event_date: day })).data.event;
+  const b = (await admin('POST', '/admin/events', { name: 'Event B', event_date: day })).data.event;
+  const csv = 'full_name,phone\nAsha Juma,0712345678\n';
+  assert.equal((await importCsv(a.id, csv)).data.imported, 1);
+  assert.equal((await importCsv(b.id, csv)).data.imported, 1);
+  await admin('DELETE', `/admin/events/${a.id}`);
+  await admin('DELETE', `/admin/events/${b.id}`);
+});
+
+test('a double-click (two imports at the same moment) still gives no duplicates', async () => {
+  const ev = (await admin('POST', '/admin/events', { name: 'Import test 3', event_date: new Date().toISOString().slice(0, 10) })).data.event;
+  const csv = 'full_name,phone\n' + Array.from({ length: 40 }, (_, i) => `Guest Number${i},07000000${String(i).padStart(2, '0')}`).join('\n');
+  const results = await Promise.all([importCsv(ev.id, csv), importCsv(ev.id, csv), importCsv(ev.id, csv)]);
+  assert.ok(results.every((r) => r.status === 200 || r.status === 409));
+  assert.equal(await guestCount(ev.id), 40);
+  await admin('DELETE', `/admin/events/${ev.id}`);
+});
