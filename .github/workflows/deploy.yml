@@ -1,0 +1,33 @@
+name: Deploy
+
+# Runs only AFTER "Node.js CI" has passed on main, on your own machine
+# (a GitHub "self-hosted runner"). You can also start it by hand from the Actions tab.
+on:
+  workflow_run:
+    workflows: ["Node.js CI"]
+    types: [completed]
+    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: self-hosted
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22.x
+
+    - name: Deploy
+      run: bash deploy/deploy.sh

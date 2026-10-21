@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "db:setup": "node src/scripts/migrate.js && node src/scripts/seedAdmin.js"
+    "db:setup": "node src/scripts/migrate.js && node src/scripts/seedAdmin.js",
+    "test": "node --test",
+    "test:unit": "node --test test/utils.test.js"
   },
   "dependencies": {
     "archiver": "^7.0.1",
