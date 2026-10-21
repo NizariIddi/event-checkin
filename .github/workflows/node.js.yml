@@ -1,6 +1,3 @@
-# This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
-
 name: Node.js CI
 
 on:
@@ -11,21 +8,43 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x, 22.x]
-        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
+        node-version: [20.x, 22.x]
 
     steps:
     - uses: actions/checkout@v4
+
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-    - run: npm ci
-    - run: npm run build --if-present
-    - run: npm test
+
+    - name: Install server dependencies
+      working-directory: server
+      run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+    - name: Install client dependencies
+      working-directory: client
+      run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+    - name: Build client
+      working-directory: client
+      run: npm run build
+
+    - name: Check server code for syntax errors
+      working-directory: server
+      run: find src -name '*.js' -print0 | xargs -0 -n1 node --check
+
+    - name: Smoke test server
+      working-directory: server
+      run: |
+        PORT=5055 node src/index.js &
+        SERVER_PID=$!
+        sleep 3
+        code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5055/api/nothing)
+        kill $SERVER_PID
+        echo "Server answered with HTTP $code"
+        test "$code" = "404"
