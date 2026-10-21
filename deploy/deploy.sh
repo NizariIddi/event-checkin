@@ -41,8 +41,8 @@ PORT="${PORT:-5000}"
 echo "==> Waiting for the app on port $PORT"
 
 for i in $(seq 1 30); do
-  if curl -fsS -o /dev/null \
-      "http://127.0.0.1:$PORT/"; then
+  if curl -fsS --max-time 2 -o /dev/null \
+      "http://127.0.0.1:$PORT/" 2>/dev/null; then
     echo "Deployed successfully."
     exit 0
   fi
@@ -54,6 +54,3 @@ echo "Deployment health check failed. Service logs:"
 journalctl --user -u event-checkin -n 50 --no-pager || true
 exit 1
 
-echo "The app did not answer after 30 seconds. Last service logs:"
-journalctl --user -u event-checkin -n 30 --no-pager || true
-exit 1
