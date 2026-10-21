@@ -1,3 +1,10 @@
 node_modules
 dist
 .env
+
+# GitHub Actions self-hosted runner
+/actions-runner/
+
+# Production environment variables
+.env.*
+!.env.example
