@@ -60,6 +60,9 @@ export default function EventDetail() {
   const [guests, setGuests] = useState([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [selectedIds, setSelectedIds] = useState([]);
   const [error, setError] = useState('');
   const [modal, setModal] = useState(null); // {type, ...}
   const [newPin, setNewPin] = useState(null);
@@ -84,7 +87,40 @@ export default function EventDetail() {
     });
   }, [guests, search, filter]);
 
+  const pageCount = Math.max(1, Math.ceil(shown.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageGuests = shown.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const pageGuestIds = pageGuests.map((g) => g.id);
+  const allPageSelected = pageGuestIds.length > 0 && pageGuestIds.every((guestId) => selectedIds.includes(guestId));
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, filter, pageSize]);
+
+  useEffect(() => {
+    const guestIds = new Set(guests.map((g) => g.id));
+    setSelectedIds((current) => current.filter((guestId) => guestIds.has(guestId)));
+  }, [guests]);
+
   const run = async (key, fn) => { setBusy(key); try { await fn(); } catch (e) { alert(e.message); } finally { setBusy(''); } };
+
+  const togglePageSelection = (checked) => {
+    setSelectedIds((current) => {
+      const currentIds = new Set(current);
+      pageGuestIds.forEach((guestId) => checked ? currentIds.add(guestId) : currentIds.delete(guestId));
+      return [...currentIds];
+    });
+  };
+
+  const deleteSelected = () => {
+    const count = selectedIds.length;
+    if (!count || !confirm(`Delete ${count} selected ${count === 1 ? 'guest' : 'guests'}? This cannot be undone.`)) return;
+    run('bulkDelete', async () => {
+      await api.del(`/admin/events/${id}/guests`, 'admin', { ids: selectedIds });
+      setSelectedIds([]);
+      await load();
+    });
+  };
 
   const saveGuest = async (form) => {
     if (modal.guest) await api.put(`/admin/guests/${modal.guest.id}`, form, 'admin');
@@ -176,17 +212,30 @@ export default function EventDetail() {
           {['all', 'arrived', 'pending'].map((k) => (
             <button key={k} onClick={() => setFilter(k)} className={`rounded-full px-3 py-1 text-sm font-medium capitalize ${filter === k ? 'bg-ink text-mist-50' : 'bg-mist-100 text-steel-dark hover:bg-mist'}`}>{k === 'pending' ? 'Not arrived' : k}</button>
           ))}
+          {selectedIds.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-steel">{selectedIds.length} selected</span>
+              <button className="btn btn-secondary text-bad" disabled={busy === 'bulkDelete'} onClick={deleteSelected}>
+                {busy === 'bulkDelete' ? 'Deleting…' : 'Delete selected'}
+              </button>
+              <button className="text-sm text-steel-dark hover:underline" onClick={() => setSelectedIds([])}>Clear</button>
+            </div>
+          )}
           <button onClick={downloadTemplate} className="ml-auto text-sm text-teal-dark hover:underline">CSV template</button>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px] text-left text-sm">
+          <table className="w-full min-w-[820px] text-left text-sm">
             <thead className="bg-mist-50 text-xs uppercase tracking-wide text-steel">
-              <tr><th className="px-4 py-2">ID</th><th className="px-4 py-2">Name</th><th className="px-4 py-2">Type</th><th className="px-4 py-2">Phone</th><th className="px-4 py-2">Category</th><th className="px-4 py-2">Table</th><th className="px-4 py-2">Status</th><th className="px-4 py-2 text-right">Actions</th></tr>
+              <tr>
+                <th className="px-4 py-2"><input type="checkbox" aria-label="Select all guests on this page" checked={allPageSelected} onChange={(e) => togglePageSelection(e.target.checked)} /></th>
+                <th className="px-4 py-2">ID</th><th className="px-4 py-2">Name</th><th className="px-4 py-2">Type</th><th className="px-4 py-2">Phone</th><th className="px-4 py-2">Category</th><th className="px-4 py-2">Table</th><th className="px-4 py-2">Status</th><th className="px-4 py-2 text-right">Actions</th>
+              </tr>
             </thead>
             <tbody className="divide-y divide-mist">
-              {shown.map((g) => (
+              {pageGuests.map((g) => (
                 <tr key={g.id} className="hover:bg-mist-50">
+                  <td className="px-4 py-2"><input type="checkbox" aria-label={`Select ${g.full_name}`} checked={selectedIds.includes(g.id)} onChange={(e) => setSelectedIds((current) => e.target.checked ? [...new Set([...current, g.id])] : current.filter((guestId) => guestId !== g.id))} /></td>
                   <td className="px-4 py-2 font-mono font-semibold">{g.code}</td>
                   <td className="px-4 py-2 font-medium">{g.full_name}</td>
                   <td className="px-4 py-2"><span className={`rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wide ${g.card_type === 'double' ? 'bg-teal-light text-teal-dark' : 'bg-mist-100 text-steel-dark'}`}>{g.card_type}</span></td>
@@ -207,9 +256,26 @@ export default function EventDetail() {
                   </td>
                 </tr>
               ))}
-              {!shown.length && <tr><td colSpan={8} className="px-4 py-10 text-center text-steel">{guests.length ? 'No guests match your search.' : 'No guests yet. Add one or import a CSV.'}</td></tr>}
+              {!shown.length && <tr><td colSpan={9} className="px-4 py-10 text-center text-steel">{guests.length ? 'No guests match your search.' : 'No guests yet. Add one or import a CSV.'}</td></tr>}
             </tbody>
           </table>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-mist p-4 text-sm">
+          <p className="text-steel">
+            {shown.length ? `Showing ${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, shown.length)} of ${shown.length}` : 'Showing 0 guests'}
+          </p>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-steel-dark">
+              Per page
+              <select className="input w-auto py-1" value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                <option value={10}>10</option>
+                <option value={15}>15</option>
+              </select>
+            </label>
+            <button className="btn btn-secondary" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+            <span className="text-steel-dark">Page {currentPage} of {pageCount}</span>
+            <button className="btn btn-secondary" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>Next</button>
+          </div>
         </div>
       </section>
 

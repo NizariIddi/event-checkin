@@ -53,7 +53,7 @@ export const api = {
   get: (p, auth) => request(p, { auth }),
   post: (p, body, auth) => request(p, { method: 'POST', body: body ?? {}, auth }),
   put: (p, body, auth) => request(p, { method: 'PUT', body, auth }),
-  del: (p, auth) => request(p, { method: 'DELETE', auth }),
+  del: (p, auth, body) => request(p, { method: 'DELETE', body, auth }),
   upload: (p, form, auth) => request(p, { method: 'POST', form, auth }),
 };
 

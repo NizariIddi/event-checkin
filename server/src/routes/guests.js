@@ -107,6 +107,32 @@ router.get("/events/:id/guests", async (req, res, next) => {
   }
 });
 
+router.delete("/events/:id/guests", async (req, res, next) => {
+  try {
+    const ids = req.body?.ids;
+    if (
+      !Array.isArray(ids) ||
+      ids.length === 0 ||
+      ids.length > config.maxGuests ||
+      ids.some((id) => !Number.isSafeInteger(id) || id < 1)
+    ) {
+      return res.status(400).json({ error: "A valid list of guest IDs is required" });
+    }
+
+    if (!(await eventExists(req.params.id))) {
+      return res.status(404).json({ error: "Event not found" });
+    }
+
+    const [result] = await pool.query(
+      "DELETE FROM guests WHERE event_id = ? AND id IN (?)",
+      [req.params.id, [...new Set(ids)]],
+    );
+    res.json({ ok: true, deleted: result.affectedRows });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.post("/events/:id/guests", async (req, res, next) => {
   try {
     if (!(await eventExists(req.params.id)))
