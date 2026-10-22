@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS events (
     card_name_y DECIMAL(8,2) NULL,
     card_name_width DECIMAL(8,2) NULL,
     card_name_font_size DECIMAL(8,2) NULL,
+    card_name_font_family VARCHAR(100) NULL,
+    card_name_font_variant VARCHAR(32) NULL,
     card_qr_x DECIMAL(8,2) NULL,
     card_qr_y DECIMAL(8,2) NULL,
     card_qr_size DECIMAL(8,2) NULL,

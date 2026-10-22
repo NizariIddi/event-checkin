@@ -8,3 +8,6 @@ dist
 # Production environment variables
 .env.*
 !.env.example
+
+# Runtime cache of Google Fonts used by generated cards
+/server/assets/card/fonts/google/
