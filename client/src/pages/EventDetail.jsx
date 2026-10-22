@@ -80,12 +80,42 @@ function NudgeControls({ label, onMove }) {
   );
 }
 
+function fontVariantLabel(variant) {
+  const italic = variant.endsWith('italic');
+  const weight = variant === 'regular' || variant === 'italic'
+    ? 400
+    : Number(variant.replace('italic', '')) || 400;
+  const weightName = ({
+    100: 'Thin',
+    200: 'ExtraLight',
+    300: 'Light',
+    400: 'Regular',
+    500: 'Medium',
+    600: 'SemiBold',
+    700: 'Bold',
+    800: 'ExtraBold',
+    900: 'Black',
+  })[weight] || `Weight ${weight}`;
+  return `${weightName}${italic ? ' Italic' : ''}`;
+}
+
+function fontCssUrl(family, variant) {
+  const italic = variant.endsWith('italic');
+  const weight = variant === 'regular' || variant === 'italic'
+    ? 400
+    : Number(variant.replace('italic', '')) || 400;
+  const query = new URLSearchParams({ family: `${family}:ital,wght@${italic ? 1 : 0},${weight}`, display: 'swap' });
+  return `https://fonts.googleapis.com/css2?${query.toString()}`;
+}
+
 function TemplateModal({ event, onClose, onSave, onReset }) {
   const defaults = {
     name_x: event?.card_name_x ?? 623,
     name_y: event?.card_name_y ?? 508,
     name_width: event?.card_name_width ?? 600,
     name_font_size: event?.card_name_font_size ?? 48,
+    name_font_family: event?.card_name_font_family ?? '',
+    name_font_variant: event?.card_name_font_variant ?? '',
     qr_x: event?.card_qr_x ?? 549,
     qr_y: event?.card_qr_y ?? 1250,
     qr_size: event?.card_qr_size ?? 165,
@@ -98,12 +128,45 @@ function TemplateModal({ event, onClose, onSave, onReset }) {
   const [previewLoaded, setPreviewLoaded] = useState(false);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0 });
   const [zoom, setZoom] = useState(1);
+  const [fontOptions, setFontOptions] = useState([]);
+  const [loadingFonts, setLoadingFonts] = useState(true);
+  const [fontError, setFontError] = useState('');
+  const [fontSearch, setFontSearch] = useState(defaults.name_font_family);
+  const [fontMenuOpen, setFontMenuOpen] = useState(false);
+  const [activeFontIndex, setActiveFontIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const imageRef = useRef(null);
   const previewViewportRef = useRef(null);
   const dragRef = useRef(null);
   const hasLayout = event?.card_name_x != null;
+  const selectedFont = fontOptions.find((font) => font.family === form.name_font_family);
+  const matchingFonts = fontOptions
+    .filter((font) => font.family.toLowerCase().includes(fontSearch.trim().toLowerCase()))
+    .slice(0, 100);
+  const previewFontFamily = form.name_font_family || 'Cormorant Garamond';
+  const previewFontVariant = form.name_font_variant || '600italic';
+  const previewFontItalic = previewFontVariant.endsWith('italic');
+  const previewFontWeight = previewFontVariant === 'regular' || previewFontVariant === 'italic'
+    ? 400
+    : Number(previewFontVariant.replace('italic', '')) || 400;
+
+  useEffect(() => {
+    let active = true;
+    api.get('/admin/fonts', 'admin')
+      .then((fonts) => { if (active) setFontOptions(fonts); })
+      .catch((err) => { if (active) setFontError(err.message); })
+      .finally(() => { if (active) setLoadingFonts(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = fontCssUrl(previewFontFamily, previewFontVariant);
+    document.head.appendChild(link);
+    return () => link.remove();
+  }, [previewFontFamily, previewFontVariant]);
 
   useEffect(() => {
     if (!event.card_template_path) {
@@ -310,7 +373,7 @@ function TemplateModal({ event, onClose, onSave, onReset }) {
   };
 
   return (
-    <Modal title="Card template" onClose={onClose} wide>
+    <Modal title="Card template" onClose={onClose} extraWide mobileFullScreen>
       <form onSubmit={submit} className="space-y-4">
         {error && <p className="rounded-lg bg-bad-light p-2 text-sm text-bad">{error}</p>}
 
@@ -328,7 +391,151 @@ function TemplateModal({ event, onClose, onSave, onReset }) {
           <p className="mt-1 text-xs text-steel">Drag the name and QR to position them. Drag a corner handle to resize.</p>
         </div>
 
-        <div ref={previewViewportRef} className="max-h-[55vh] overflow-auto rounded-lg border border-mist bg-mist-100 p-3 text-center">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="relative">
+            <label className="label" htmlFor="guest-name-font">Font Family</label>
+            <input
+              id="guest-name-font"
+              className="input"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={fontMenuOpen}
+              aria-controls="guest-name-font-options"
+              aria-activedescendant={fontMenuOpen && matchingFonts.length
+                ? `guest-name-font-option-${activeFontIndex}`
+                : undefined}
+              autoComplete="off"
+              placeholder={loadingFonts ? 'Loading Google Fonts…' : 'Type to search Google Fonts'}
+              value={fontSearch}
+              disabled={loadingFonts}
+              onFocus={(e) => {
+                setFontMenuOpen(true);
+                e.currentTarget.select();
+              }}
+              onBlur={() => setFontMenuOpen(false)}
+              onChange={(e) => {
+                setFontSearch(e.target.value);
+                setActiveFontIndex(0);
+                setFontMenuOpen(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setFontSearch(form.name_font_family);
+                  setFontMenuOpen(false);
+                } else if (e.key === 'ArrowDown' && matchingFonts.length) {
+                  e.preventDefault();
+                  setFontMenuOpen(true);
+                  setActiveFontIndex((index) => Math.min(index + 1, matchingFonts.length - 1));
+                } else if (e.key === 'ArrowUp' && matchingFonts.length) {
+                  e.preventDefault();
+                  setActiveFontIndex((index) => Math.max(index - 1, 0));
+                } else if (e.key === 'Enter' && fontMenuOpen) {
+                  e.preventDefault();
+                  const font = matchingFonts[activeFontIndex];
+                  if (font) {
+                    const variant = font.variants.includes('600italic')
+                      ? '600italic'
+                      : font.variants.includes('regular')
+                        ? 'regular'
+                        : font.variants[0] || '';
+                    setForm((current) => ({ ...current, name_font_family: font.family, name_font_variant: variant }));
+                    setFontSearch(font.family);
+                    setFontMenuOpen(false);
+                  } else if (!fontSearch.trim()) {
+                    setForm((current) => ({ ...current, name_font_family: '', name_font_variant: '' }));
+                    setFontMenuOpen(false);
+                  }
+                }
+              }}
+            />
+            {fontMenuOpen && (
+              <div
+                id="guest-name-font-options"
+                role="listbox"
+                aria-label="Google Fonts"
+                className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-mist-300 bg-white py-1 text-left shadow-lg"
+              >
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={!form.name_font_family}
+                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-mist-100 ${!form.name_font_family ? 'bg-mist-100 font-semibold' : ''}`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setForm((current) => ({ ...current, name_font_family: '', name_font_variant: '' }));
+                    setFontSearch('');
+                    setFontMenuOpen(false);
+                  }}
+                >
+                  Cormorant Garamond (default)
+                </button>
+                {matchingFonts.map((font, index) => (
+                  <button
+                    id={`guest-name-font-option-${index}`}
+                    key={font.family}
+                    type="button"
+                    role="option"
+                    aria-selected={form.name_font_family === font.family}
+                    className={`block w-full px-3 py-2 text-left text-sm hover:bg-mist-100 ${activeFontIndex === index ? 'bg-mist-100' : ''}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setActiveFontIndex(index)}
+                    onClick={() => {
+                      const variant = font.variants.includes('600italic')
+                        ? '600italic'
+                        : font.variants.includes('regular')
+                          ? 'regular'
+                          : font.variants[0] || '';
+                      setForm((current) => ({ ...current, name_font_family: font.family, name_font_variant: variant }));
+                      setFontSearch(font.family);
+                      setFontMenuOpen(false);
+                    }}
+                  >
+                    {font.family}
+                  </button>
+                ))}
+                {!matchingFonts.length && (
+                  <p className="px-3 py-2 text-sm text-steel">No fonts match “{fontSearch}”.</p>
+                )}
+                {matchingFonts.length === 100 && (
+                  <p className="px-3 py-2 text-xs text-steel">Showing the first 100 matches. Type more to narrow the list.</p>
+                )}
+              </div>
+            )}
+            {!loadingFonts && !fontError && <p className="mt-1 text-xs text-steel">{fontOptions.length} Google Fonts available</p>}
+          </div>
+          <div>
+            <label className="label" htmlFor="guest-name-font-style">Font Variant</label>
+            <select
+              id="guest-name-font-style"
+              className="input"
+              value={form.name_font_variant}
+              disabled={!selectedFont}
+              onChange={(e) => setForm((current) => ({ ...current, name_font_variant: e.target.value }))}
+            >
+              {selectedFont?.variants.map((variant) => (
+                <option key={variant} value={variant}>{fontVariantLabel(variant)}</option>
+              ))}
+              {!selectedFont && <option value="">Default font variant</option>}
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="guest-name-font-size">Font size (image pixels)</label>
+            <input
+              id="guest-name-font-size"
+              type="number"
+              min="8"
+              max="160"
+              step="any"
+              className="input"
+              value={form.name_font_size}
+              onChange={(e) => setForm((current) => ({ ...current, name_font_size: Number(e.target.value) }))}
+              required
+            />
+          </div>
+          {fontError && <p className="text-sm text-bad sm:col-span-3">{fontError}. The existing default font can still be used.</p>}
+        </div>
+
+        <div ref={previewViewportRef} className="max-h-[40dvh] overflow-auto rounded-lg border border-mist bg-mist-100 p-2 text-center sm:max-h-[55vh] sm:p-3">
           {uploadPreviewUrl || templateUrl ? (
             <div
               className="relative mx-auto inline-block align-top"
@@ -362,7 +569,12 @@ function TemplateModal({ event, onClose, onSave, onReset }) {
                       lineHeight: 1,
                     }}
                   >
-                    <span className="pointer-events-none overflow-hidden text-ellipsis whitespace-nowrap px-1">Guest Name</span>
+                    <span
+                      className="pointer-events-none overflow-hidden text-ellipsis whitespace-nowrap px-1"
+                      style={{ fontFamily: `"${previewFontFamily}"`, fontStyle: previewFontItalic ? 'italic' : 'normal', fontWeight: previewFontWeight }}
+                    >
+                      Guest Name
+                    </span>
                     <button
                       type="button"
                       aria-label="Resize guest name"
@@ -422,11 +634,11 @@ function TemplateModal({ event, onClose, onSave, onReset }) {
         )}
 
         <p className="text-xs text-steel">The QR overlay is a preview marker; generated cards will contain each guest’s actual scannable QR code.</p>
-        <div className="flex justify-between gap-2 pt-1">
-          <button type="button" className="btn btn-secondary text-bad" disabled={busy || !event?.card_template_path} onClick={reset}>Reset template</button>
+        <div className="sticky bottom-0 -mx-4 flex flex-col-reverse gap-2 border-t border-mist bg-white/95 px-4 pb-2 pt-3 backdrop-blur sm:static sm:mx-0 sm:flex-row sm:justify-between sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+          <button type="button" className="btn btn-secondary min-h-11 w-full text-bad sm:w-auto" disabled={busy || !event?.card_template_path} onClick={reset}>Reset template</button>
           <div className="flex gap-2">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" disabled={busy || !previewLoaded || !(uploadPreviewUrl || templateUrl)}>{busy ? 'Saving…' : 'Save settings'}</button>
+            <button type="button" className="btn btn-secondary min-h-11 flex-1 sm:flex-none" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary min-h-11 flex-1 sm:flex-none" disabled={busy || !previewLoaded || !(uploadPreviewUrl || templateUrl)}>{busy ? 'Saving…' : 'Save settings'}</button>
           </div>
         </div>
       </form>

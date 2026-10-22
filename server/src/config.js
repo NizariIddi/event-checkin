@@ -7,6 +7,7 @@ export const config = {
     "",
   ),
   jwtSecret: process.env.JWT_SECRET || "dev-secret-change-me",
+  googleFontsApiKey: process.env.GOOGLE_FONTS || process.env.GOOGLE_FONTS_API_KEY || "",
   maxGuests: Number(process.env.MAX_GUESTS_PER_EVENT || 1000),
   tzOffset: process.env.APP_TZ_OFFSET || "+03:00",
   db: {

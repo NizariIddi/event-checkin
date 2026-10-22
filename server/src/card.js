@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 import QRCode from 'qrcode';
+import { registerGoogleFont } from './googleFonts.js';
 
 const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../assets/card');
 
@@ -40,13 +41,13 @@ function normalizeLayout(layout = {}) {
   };
 }
 
-function fitName(ctx, rawName, maxWidth, maxSize, minSize = 8) {
+function fitName(ctx, rawName, maxWidth, maxSize, fontFace, minSize = 8) {
   let text = String(rawName || '').replace(/\s+/g, ' ').trim();
   for (let size = maxSize; size >= minSize; size -= 0.25) {
-    ctx.font = `${size}px CardName`;
+    ctx.font = `${size}px "${fontFace}"`;
     if (ctx.measureText(text).width <= maxWidth) return { text, size };
   }
-  ctx.font = `${minSize}px CardName`;
+  ctx.font = `${minSize}px "${fontFace}"`;
   while (text.length > 1 && ctx.measureText(`${text}…`).width > maxWidth) text = text.slice(0, -1).trimEnd();
   return { text: `${text}…`, size: minSize };
 }
@@ -80,13 +81,16 @@ export async function renderCard({ name, code, templatePath, layout = {} }) {
   const sourceImage = await loadImage(path.resolve(templatePath));
   const width = sourceImage.width || CARD.w;
   const height = sourceImage.height || CARD.h;
+  const fontFace = layout.card_name_font_family
+    ? await registerGoogleFont(layout.card_name_font_family, layout.card_name_font_variant)
+    : 'CardName';
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext('2d');
   ctx.drawImage(sourceImage, 0, 0, width, height);
 
   const maxWidth = Number.isFinite(resolvedLayout.nameWidth) ? resolvedLayout.nameWidth : DEFAULT_LAYOUT.nameWidth;
-  const { text, size } = fitName(ctx, name, maxWidth, resolvedLayout.nameSize, Math.max(8, resolvedLayout.nameSize * 0.45));
-  ctx.font = `${size}px CardName`;
+  const { text, size } = fitName(ctx, name, maxWidth, resolvedLayout.nameSize, fontFace, Math.max(8, resolvedLayout.nameSize * 0.45));
+  ctx.font = `${size}px "${fontFace}"`;
   ctx.fillStyle = NAME_COLOR;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';

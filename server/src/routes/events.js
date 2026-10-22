@@ -8,6 +8,7 @@ import { pool } from '../db.js';
 import { config } from '../config.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { newToken, newPin, clean, eventExpiry, isEventAccessOpen } from '../utils.js';
+import { GoogleFontsError, listGoogleFonts } from '../googleFonts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.resolve(__dirname, '../../assets/card');
@@ -67,6 +68,15 @@ const SELECT_WITH_STATS = `
          COALESCE(SUM(CASE WHEN g.card_type = 'double' THEN 2 ELSE 1 END), 0) AS total_guests,
          COALESCE(SUM(g.admitted_count), 0) AS arrived
   FROM events e LEFT JOIN guests g ON g.event_id = e.id`;
+
+router.get('/fonts', async (_req, res) => {
+  try {
+    res.set('Cache-Control', 'private, max-age=3600').json(await listGoogleFonts());
+  } catch (error) {
+    res.status(error instanceof GoogleFontsError ? error.status : 502)
+      .json({ error: error.message || 'Could not load Google Fonts' });
+  }
+});
 
 async function loadEvent(id) {
   const [rows] = await pool.query(`${SELECT_WITH_STATS} WHERE e.id = ? GROUP BY e.id`, [id]);
@@ -188,6 +198,27 @@ router.post('/events/:id/card-template', templateUpload.single('image'), async (
       qr_y: Number(req.body.qr_y ?? event.card_qr_y ?? 415),
       qr_size: Number(req.body.qr_size ?? event.card_qr_size ?? 80),
     };
+    const fontFamily = clean(req.body.name_font_family, 100);
+    const fontVariant = clean(req.body.name_font_variant, 32);
+    if ((fontFamily && !fontVariant) || (!fontFamily && fontVariant)) {
+      return res.status(400).json({ error: 'Choose both a Google font and its style' });
+    }
+    if (!Number.isFinite(nextLayout.name_font_size) || nextLayout.name_font_size < 8 || nextLayout.name_font_size > 160) {
+      return res.status(400).json({ error: 'Guest name font size must be between 8 and 160 pixels' });
+    }
+    if (fontFamily) {
+      let fonts;
+      try {
+        fonts = await listGoogleFonts();
+      } catch (error) {
+        if (error instanceof GoogleFontsError) return res.status(error.status).json({ error: error.message });
+        throw error;
+      }
+      const selectedFont = fonts.find((font) => font.family === fontFamily);
+      if (!selectedFont?.variants.includes(fontVariant)) {
+        return res.status(400).json({ error: 'The selected Google font style is not available' });
+      }
+    }
 
     let relativePath = event.card_template_path;
 
@@ -197,13 +228,15 @@ router.post('/events/:id/card-template', templateUpload.single('image'), async (
 
     try {
       await pool.query(
-        `UPDATE events SET card_template_path = ?, card_name_x = ?, card_name_y = ?, card_name_width = ?, card_name_font_size = ?, card_qr_x = ?, card_qr_y = ?, card_qr_size = ? WHERE id = ?`,
+        `UPDATE events SET card_template_path = ?, card_name_x = ?, card_name_y = ?, card_name_width = ?, card_name_font_size = ?, card_name_font_family = ?, card_name_font_variant = ?, card_qr_x = ?, card_qr_y = ?, card_qr_size = ? WHERE id = ?`,
         [
           relativePath,
           nextLayout.name_x,
           nextLayout.name_y,
           nextLayout.name_width,
           nextLayout.name_font_size,
+          fontFamily,
+          fontVariant,
           nextLayout.qr_x,
           nextLayout.qr_y,
           nextLayout.qr_size,
@@ -236,7 +269,7 @@ router.post('/events/:id/card-template/reset', async (req, res, next) => {
     }
 
     await pool.query(
-      `UPDATE events SET card_template_path = NULL, card_name_x = NULL, card_name_y = NULL, card_name_width = NULL, card_name_font_size = NULL, card_qr_x = NULL, card_qr_y = NULL, card_qr_size = NULL WHERE id = ?`,
+      `UPDATE events SET card_template_path = NULL, card_name_x = NULL, card_name_y = NULL, card_name_width = NULL, card_name_font_size = NULL, card_name_font_family = NULL, card_name_font_variant = NULL, card_qr_x = NULL, card_qr_y = NULL, card_qr_size = NULL WHERE id = ?`,
       [req.params.id],
     );
 
