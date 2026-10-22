@@ -1,4 +1,5 @@
 import { Router } from "express";
+import path from "path";
 import multer from "multer";
 import archiver from "archiver";
 import QRCode from "qrcode";
@@ -46,7 +47,7 @@ const presentGuest = (g) => ({
 });
 
 async function eventExists(id) {
-  const [rows] = await pool.query("SELECT id, name FROM events WHERE id = ?", [
+  const [rows] = await pool.query("SELECT id, name, card_template_path FROM events WHERE id = ?", [
     id,
   ]);
   return rows[0];
@@ -386,7 +387,6 @@ router.get("/events/:id/qr.zip", async (req, res, next) => {
     const event = await eventExists(req.params.id);
 
     if (!event) return res.status(404).json({ error: "Event not found" });
-
     const [guests] = await pool.query(
       "SELECT code, full_name FROM guests WHERE event_id = ? ORDER BY full_name",
       [req.params.id],
@@ -414,15 +414,28 @@ router.get("/events/:id/qr.zip", async (req, res, next) => {
 router.get("/guests/:id/card.jpg", async (req, res, next) => {
   try {
     const [rows] = await pool.query(
-      "SELECT code, full_name FROM guests WHERE id = ?",
+      "SELECT g.code, g.full_name, e.card_template_path, e.card_name_x, e.card_name_y, e.card_name_width, e.card_name_font_size, e.card_qr_x, e.card_qr_y, e.card_qr_size FROM guests g LEFT JOIN events e ON e.id = g.event_id WHERE g.id = ?",
       [req.params.id],
     );
 
     if (!rows[0]) return res.status(404).json({ error: "Guest not found" });
+    if (!rows[0].card_template_path) {
+      return res.status(400).json({ error: "Upload a card template for this event before generating cards" });
+    }
 
     const jpg = await renderCard({
       name: rows[0].full_name,
       code: rows[0].code,
+      templatePath: rows[0].card_template_path ? path.resolve(process.cwd(), rows[0].card_template_path) : null,
+      layout: {
+        card_name_x: rows[0].card_name_x,
+        card_name_y: rows[0].card_name_y,
+        card_name_width: rows[0].card_name_width,
+        card_name_font_size: rows[0].card_name_font_size,
+        card_qr_x: rows[0].card_qr_x,
+        card_qr_y: rows[0].card_qr_y,
+        card_qr_size: rows[0].card_qr_size,
+      },
     });
 
     res.set("Cache-Control", "no-store");
@@ -440,26 +453,40 @@ router.get("/events/:id/cards.zip", async (req, res, next) => {
     const event = await eventExists(req.params.id);
 
     if (!event) return res.status(404).json({ error: "Event not found" });
+    if (!event.card_template_path) {
+      return res.status(400).json({ error: "Upload a card template for this event before generating cards" });
+    }
 
     const [guests] = await pool.query(
-      "SELECT code, full_name FROM guests WHERE event_id = ? ORDER BY full_name",
+      "SELECT g.code, g.full_name, e.card_template_path, e.card_name_x, e.card_name_y, e.card_name_width, e.card_name_font_size, e.card_qr_x, e.card_qr_y, e.card_qr_size FROM guests g LEFT JOIN events e ON e.id = g.event_id WHERE g.event_id = ? ORDER BY g.full_name",
       [req.params.id],
     );
 
-    res
-    .attachment(`${slug(event.name)}_invitation_cards.zip`);
+    res.attachment(`${slug(event.name)}_invitation_cards.zip`);
 
     const archive = archiver("zip", { store: true });
-     // JPEGs are already compressed
     archive.on("error", next);
     archive.pipe(res);
 
     for (const g of guests) {
-      if (res.destroyed) break; // the admin closed the download
-      const jpg = await renderCard({ name: g.full_name, code: g.code });
+      if (res.destroyed) break;
+      const jpg = await renderCard({
+        name: g.full_name,
+        code: g.code,
+        templatePath: g.card_template_path ? path.resolve(process.cwd(), g.card_template_path) : null,
+        layout: {
+          card_name_x: g.card_name_x,
+          card_name_y: g.card_name_y,
+          card_name_width: g.card_name_width,
+          card_name_font_size: g.card_name_font_size,
+          card_qr_x: g.card_qr_x,
+          card_qr_y: g.card_qr_y,
+          card_qr_size: g.card_qr_size,
+        },
+      });
       const added = new Promise((resolve) => archive.once("entry", resolve));
       archive.append(jpg, { name: cardFileName(g) });
-      await added; // one card at a time keeps memory low
+      await added;
     }
     await archive.finalize();
 

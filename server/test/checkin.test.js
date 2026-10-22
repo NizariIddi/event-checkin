@@ -48,6 +48,38 @@ async function addGuest(card_type, name = "Test Guest") {
   return r.data.code;
 }
 
+async function uploadTemplate(eventId, color = "#f7f4ef") {
+  const canvas = createCanvas(1191, 1677);
+  const context = canvas.getContext("2d");
+  context.fillStyle = color;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const form = new FormData();
+  form.append("image", new Blob([canvas.toBuffer("image/png")], { type: "image/png" }), "template.png");
+  for (const [key, value] of Object.entries({
+    name_x: 623.1,
+    name_y: 507.9,
+    name_width: 600,
+    name_font_size: 48,
+    qr_x: 549,
+    qr_y: 1250,
+    qr_size: 165,
+  })) {
+    form.append(key, String(value));
+  }
+
+  const response = await fetch(`${BASE}/admin/events/${eventId}/card-template`, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + adminToken },
+    body: form,
+  });
+  const data = await response.json();
+  assert.equal(response.status, 200, data.error);
+  assert.ok(data.event.card_template_path, JSON.stringify(data));
+  assert.match(data.event.card_template_path, /^assets\/card\/event-/);
+  return data.event;
+}
+
 before(async () => {
   server = spawn(process.execPath, ["src/index.js"], {
     cwd: serverDir,
@@ -82,6 +114,7 @@ before(async () => {
   event = created.data.event;
   pin = created.data.pin;
   accessToken = event.access_token;
+  event = await uploadTemplate(event.id);
 
   const sl = await call("POST", `/access/${accessToken}/login`, {
     body: { pin },
@@ -291,7 +324,7 @@ async function importCsv(eventId, csv) {
   fd.append("file", new Blob([csv], { type: "text/csv" }), "guests.csv");
   const res = await fetch(`${BASE}/admin/events/${eventId}/import`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${adminToken}` },
+    headers: { Authorization: "Bearer " + adminToken },
     body: fd,
   });
   return { status: res.status, data: await res.json() };
@@ -499,6 +532,10 @@ test("cards ZIP: one JPEG per guest, named with the ID", async () => {
       event_date: today(),
     })
   ).data.event;
+  const noTemplate = await getBinary(`/admin/events/${ev.id}/cards.zip`);
+  assert.equal(noTemplate.status, 400);
+  const zipEvent = await uploadTemplate(ev.id, "#f0f4f8");
+  assert.notEqual(zipEvent.card_template_path, event.card_template_path);
   const guests = [
     await newGuest(ev.id, "Asha Juma"),
     await newGuest(ev.id, "Baraka Said", "double"),

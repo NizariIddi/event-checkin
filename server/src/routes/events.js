@@ -1,17 +1,57 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { Router } from 'express';
+import multer from 'multer';
 import bcrypt from 'bcryptjs';
 import { pool } from '../db.js';
 import { config } from '../config.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { newToken, newPin, clean, eventExpiry, isEventAccessOpen } from '../utils.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uploadDir = path.resolve(__dirname, '../../assets/card');
+const legacyUploadDir = path.resolve(__dirname, '../../uploads/card-templates');
+fs.mkdirSync(uploadDir, { recursive: true });
+
 const router = Router();
 router.use(requireAdmin);
+
+function removeTemplateFile(relativePath) {
+  if (!relativePath) return;
+  const resolvedPath = path.resolve(process.cwd(), relativePath);
+  const allowedDirs = [uploadDir, legacyUploadDir];
+  if (!allowedDirs.some((dir) => resolvedPath.startsWith(`${dir}${path.sep}`))) return;
+  if (fs.existsSync(resolvedPath)) fs.unlinkSync(resolvedPath);
+}
+
+const templateUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.png';
+      cb(null, `event-${req.params.id}-${Date.now()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok = ['.jpg', '.jpeg', '.png'].includes(path.extname(file.originalname || '').toLowerCase());
+    cb(ok ? null : new Error('Only JPG and PNG images are allowed'), ok);
+  },
+});
 
 const present = (e) => {
   const { pin_hash, ...rest } = e;
   return {
     ...rest,
+    card_template_path: e.card_template_path || null,
+    card_name_x: e.card_name_x == null ? null : Number(e.card_name_x),
+    card_name_y: e.card_name_y == null ? null : Number(e.card_name_y),
+    card_name_width: e.card_name_width == null ? null : Number(e.card_name_width),
+    card_name_font_size: e.card_name_font_size == null ? null : Number(e.card_name_font_size),
+    card_qr_x: e.card_qr_x == null ? null : Number(e.card_qr_x),
+    card_qr_y: e.card_qr_y == null ? null : Number(e.card_qr_y),
+    card_qr_size: e.card_qr_size == null ? null : Number(e.card_qr_size),
     total_cards: Number(e.total_cards || 0),
     total_guests: Number(e.total_guests || 0),
     arrived: Number(e.arrived || 0),
@@ -114,9 +154,103 @@ router.put('/events/:id', async (req, res, next) => {
     }
 });
 
+router.get('/events/:id/card-template', async (req, res, next) => {
+  try {
+    const event = await loadEvent(req.params.id);
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+    if (!event.card_template_path) return res.status(404).json({ error: 'Upload a card template for this event' });
+    const templatePath = path.resolve(process.cwd(), event.card_template_path);
+    if (!fs.existsSync(templatePath)) return res.status(404).json({ error: 'Card template not found' });
+    res.set('Cache-Control', 'no-store').sendFile(templatePath);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/events/:id/card-template', templateUpload.single('image'), async (req, res, next) => {
+  try {
+    const event = await loadEvent(req.params.id);
+
+    if (!event) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    if (!req.file && !event.card_template_path) {
+      return res.status(400).json({ error: 'Upload a template image for this event first' });
+    }
+
+    const nextLayout = {
+      name_x: Number(req.body.name_x ?? event.card_name_x ?? 200),
+      name_y: Number(req.body.name_y ?? event.card_name_y ?? 170),
+      name_width: Number(req.body.name_width ?? event.card_name_width ?? 180),
+      name_font_size: Number(req.body.name_font_size ?? event.card_name_font_size ?? 18),
+      qr_x: Number(req.body.qr_x ?? event.card_qr_x ?? 180),
+      qr_y: Number(req.body.qr_y ?? event.card_qr_y ?? 415),
+      qr_size: Number(req.body.qr_size ?? event.card_qr_size ?? 80),
+    };
+
+    let relativePath = event.card_template_path;
+
+    if (req.file) {
+      relativePath = path.relative(path.resolve(process.cwd()), req.file.path).split(path.sep).join('/');
+    }
+
+    try {
+      await pool.query(
+        `UPDATE events SET card_template_path = ?, card_name_x = ?, card_name_y = ?, card_name_width = ?, card_name_font_size = ?, card_qr_x = ?, card_qr_y = ?, card_qr_size = ? WHERE id = ?`,
+        [
+          relativePath,
+          nextLayout.name_x,
+          nextLayout.name_y,
+          nextLayout.name_width,
+          nextLayout.name_font_size,
+          nextLayout.qr_x,
+          nextLayout.qr_y,
+          nextLayout.qr_size,
+          req.params.id,
+        ],
+      );
+    } catch (e) {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      throw e;
+    }
+
+    if (req.file) {
+      removeTemplateFile(event.card_template_path);
+    }
+
+    const updated = await loadEvent(req.params.id);
+    res.json({ ok: true, event: present(updated) });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/events/:id/card-template/reset', async (req, res, next) => {
+  try {
+    const event = await loadEvent(req.params.id);
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+
+    if (event.card_template_path) {
+      removeTemplateFile(event.card_template_path);
+    }
+
+    await pool.query(
+      `UPDATE events SET card_template_path = NULL, card_name_x = NULL, card_name_y = NULL, card_name_width = NULL, card_name_font_size = NULL, card_qr_x = NULL, card_qr_y = NULL, card_qr_size = NULL WHERE id = ?`,
+      [req.params.id],
+    );
+
+    res.json({ ok: true, event: present(await loadEvent(req.params.id)) });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.delete('/events/:id', async (req, res, next) => {
   try {
+    const [rows] = await pool.query('SELECT card_template_path FROM events WHERE id = ?', [req.params.id]);
     await pool.query('DELETE FROM events WHERE id = ?', [req.params.id]);
+    removeTemplateFile(rows[0]?.card_template_path);
 
     res.json({ 
       ok: true 

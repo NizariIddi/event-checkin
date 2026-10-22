@@ -49,5 +49,18 @@ if (
   );
 }
 
+await addColumn(
+  "events",
+  "card_template_path",
+  "card_template_path VARCHAR(255) NULL AFTER notes",
+);
+await addColumn("events", "card_name_x", "card_name_x DECIMAL(8,2) NULL AFTER card_template_path");
+await addColumn("events", "card_name_y", "card_name_y DECIMAL(8,2) NULL AFTER card_name_x");
+await addColumn("events", "card_name_width", "card_name_width DECIMAL(8,2) NULL AFTER card_name_y");
+await addColumn("events", "card_name_font_size", "card_name_font_size DECIMAL(8,2) NULL AFTER card_name_width");
+await addColumn("events", "card_qr_x", "card_qr_x DECIMAL(8,2) NULL AFTER card_name_font_size");
+await addColumn("events", "card_qr_y", "card_qr_y DECIMAL(8,2) NULL AFTER card_qr_x");
+await addColumn("events", "card_qr_size", "card_qr_size DECIMAL(8,2) NULL AFTER card_qr_y");
+
 console.log(`Database "${database}" is ready.`);
 await db.end();

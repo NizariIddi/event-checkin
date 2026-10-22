@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { api, downloadFile, fmtDate, fmtTime } from '../api.js';
+import { api, downloadFile, fetchBlobUrl, fmtDate, fmtTime } from '../api.js';
 import CardModal from '../components/CardModal.jsx';
 import AdminLayout from '../components/AdminLayout.jsx';
 import Modal from '../components/Modal.jsx';
@@ -46,6 +46,388 @@ function GuestModal({ guest, onSave, onClose }) {
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function NudgeControls({ label, onMove }) {
+  const directions = [
+    { key: 'ArrowUp', label: `Move ${label} up`, dx: 0, dy: -1, position: 'col-start-2 row-start-1' },
+    { key: 'ArrowLeft', label: `Move ${label} left`, dx: -1, dy: 0, position: 'col-start-1 row-start-2' },
+    { key: 'ArrowDown', label: `Move ${label} down`, dx: 0, dy: 1, position: 'col-start-2 row-start-2' },
+    { key: 'ArrowRight', label: `Move ${label} right`, dx: 1, dy: 0, position: 'col-start-3 row-start-2' },
+  ];
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm font-medium text-steel-dark">{label}</span>
+      <div className="grid grid-cols-3 grid-rows-2 gap-1">
+        {directions.map(({ key, label: buttonLabel, dx, dy, position }) => (
+          <button
+            key={key}
+            type="button"
+            className={`btn btn-secondary h-8 w-8 p-0 ${position}`}
+            aria-label={buttonLabel}
+            title={`${buttonLabel} 1 image pixel (Shift: 10 pixels)`}
+            onClick={(e) => onMove(dx * (e.shiftKey ? 10 : 1), dy * (e.shiftKey ? 10 : 1))}
+          >
+            {key === 'ArrowUp' ? '↑' : key === 'ArrowDown' ? '↓' : key === 'ArrowLeft' ? '←' : '→'}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TemplateModal({ event, onClose, onSave, onReset }) {
+  const defaults = {
+    name_x: event?.card_name_x ?? 623,
+    name_y: event?.card_name_y ?? 508,
+    name_width: event?.card_name_width ?? 600,
+    name_font_size: event?.card_name_font_size ?? 48,
+    qr_x: event?.card_qr_x ?? 549,
+    qr_y: event?.card_qr_y ?? 1250,
+    qr_size: event?.card_qr_size ?? 165,
+  };
+  const [form, setForm] = useState(defaults);
+  const [file, setFile] = useState(null);
+  const [templateUrl, setTemplateUrl] = useState('');
+  const [uploadPreviewUrl, setUploadPreviewUrl] = useState('');
+  const [loadingTemplate, setLoadingTemplate] = useState(Boolean(event?.card_template_path));
+  const [previewLoaded, setPreviewLoaded] = useState(false);
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const imageRef = useRef(null);
+  const previewViewportRef = useRef(null);
+  const dragRef = useRef(null);
+  const hasLayout = event?.card_name_x != null;
+
+  useEffect(() => {
+    if (!event.card_template_path) {
+      setLoadingTemplate(false);
+      return undefined;
+    }
+    let active = true;
+    let objectUrl;
+    setLoadingTemplate(true);
+    fetchBlobUrl(`/admin/events/${event.id}/card-template`)
+      .then((url) => {
+        if (active) {
+          objectUrl = url;
+          setTemplateUrl(url);
+        } else {
+          URL.revokeObjectURL(url);
+        }
+      })
+      .catch((err) => { if (active) setError(err.message); })
+      .finally(() => { if (active) setLoadingTemplate(false); });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [event.id, event.card_template_path]);
+
+  useEffect(() => {
+    if (!file) return undefined;
+    const url = URL.createObjectURL(file);
+    setUploadPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  useEffect(() => {
+    const image = imageRef.current;
+    const viewport = previewViewportRef.current;
+    if (!image || !viewport) return undefined;
+    const updateSize = () => {
+      if (!image.naturalWidth || !image.naturalHeight) return;
+      const maxWidth = Math.max(1, viewport.clientWidth - 24);
+      const maxHeight = window.innerHeight * 0.5;
+      const fit = Math.min(maxWidth / image.naturalWidth, maxHeight / image.naturalHeight, 1);
+      setPreviewSize({
+        width: image.naturalWidth * fit,
+        height: image.naturalHeight * fit,
+        naturalWidth: image.naturalWidth,
+        naturalHeight: image.naturalHeight,
+      });
+    };
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(viewport);
+    window.addEventListener('resize', updateSize);
+    updateSize();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateSize);
+    };
+  }, [templateUrl, uploadPreviewUrl]);
+
+  useEffect(() => {
+    if (!previewSize.naturalWidth || hasLayout) return;
+    const { naturalWidth: w, naturalHeight: h } = previewSize;
+    if (w === 1191 && h === 1677) return;
+    setForm((current) => ({
+      ...current,
+      name_x: w * 0.5,
+      name_y: h * 0.28,
+      name_width: w * 0.55,
+      name_font_size: w * 0.045,
+      qr_x: w * 0.425,
+      qr_y: h * 0.72,
+      qr_size: w * 0.15,
+    }));
+  }, [previewSize.naturalWidth, previewSize.naturalHeight, hasLayout]);
+
+  const startDrag = (type) => (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.focus();
+    dragRef.current = { type, startX: e.clientX, startY: e.clientY, initial: form };
+  };
+
+  const moveOverlay = (type, dx, dy) => {
+    setForm((current) => {
+      if (type === 'name') {
+        return {
+          ...current,
+          name_x: Math.max(current.name_width / 2, Math.min(previewSize.naturalWidth - current.name_width / 2, current.name_x + dx)),
+          name_y: Math.max(current.name_font_size, Math.min(previewSize.naturalHeight, current.name_y + dy)),
+        };
+      }
+      return {
+        ...current,
+        qr_x: Math.max(0, Math.min(previewSize.naturalWidth - current.qr_size, current.qr_x + dx)),
+        qr_y: Math.max(0, Math.min(previewSize.naturalHeight - current.qr_size, current.qr_y + dy)),
+      };
+    });
+  };
+
+  const onOverlayKeyDown = (type) => (e) => {
+    const directions = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+    };
+    const direction = directions[e.key];
+    if (!direction) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 10 : 1;
+    moveOverlay(type, direction[0] * step, direction[1] * step);
+  };
+
+  useEffect(() => {
+    const move = (e) => {
+      const drag = dragRef.current;
+      if (!drag || !previewSize.naturalWidth || !previewSize.naturalHeight) return;
+      const rect = imageRef.current?.getBoundingClientRect();
+      if (!rect?.width || !rect?.height) return;
+      const dx = (e.clientX - drag.startX) * previewSize.naturalWidth / rect.width;
+      const dy = (e.clientY - drag.startY) * previewSize.naturalHeight / rect.height;
+      const { initial, type } = drag;
+      setForm((current) => {
+        if (type === 'name') {
+          return {
+            ...current,
+            name_x: Math.max(initial.name_width / 2, Math.min(previewSize.naturalWidth - initial.name_width / 2, initial.name_x + dx)),
+            name_y: Math.max(initial.name_font_size, Math.min(previewSize.naturalHeight, initial.name_y + dy)),
+          };
+        }
+        if (type === 'qr') {
+          return {
+            ...current,
+            qr_x: Math.max(0, Math.min(previewSize.naturalWidth - initial.qr_size, initial.qr_x + dx)),
+            qr_y: Math.max(0, Math.min(previewSize.naturalHeight - initial.qr_size, initial.qr_y + dy)),
+          };
+        }
+        if (type === 'resize-qr') {
+          const delta = Math.abs(dx) >= Math.abs(dy) ? dx : dy;
+          const size = Math.max(36, Math.min(
+            Math.min(previewSize.naturalWidth - initial.qr_x, previewSize.naturalHeight - initial.qr_y),
+            initial.qr_size + delta,
+          ));
+          return { ...current, qr_size: size };
+        }
+        const width = Math.max(60, Math.min(previewSize.naturalWidth, initial.name_width + dx * 2));
+        return {
+          ...current,
+          name_width: width,
+          name_font_size: Math.max(12, Math.min(160, initial.name_font_size * width / initial.name_width)),
+        };
+      });
+    };
+    const end = () => { dragRef.current = null; };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+    };
+  }, [previewSize.naturalWidth, previewSize.naturalHeight]);
+
+  const onImageLoad = (e) => {
+    const image = e.currentTarget;
+    setPreviewLoaded(true);
+    const viewport = previewViewportRef.current;
+    const maxWidth = Math.max(1, (viewport?.clientWidth || image.naturalWidth) - 24);
+    const maxHeight = window.innerHeight * 0.5;
+    const fit = Math.min(maxWidth / image.naturalWidth, maxHeight / image.naturalHeight, 1);
+    setPreviewSize({
+      width: image.naturalWidth * fit,
+      height: image.naturalHeight * fit,
+      naturalWidth: image.naturalWidth,
+      naturalHeight: image.naturalHeight,
+    });
+  };
+
+  const reset = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await onReset();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError('');
+    try {
+      const fd = new FormData();
+      if (file) fd.append('image', file);
+      Object.entries(form).forEach(([k, v]) => fd.append(k, String(v)));
+      await onSave(fd);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Card template" onClose={onClose} wide>
+      <form onSubmit={submit} className="space-y-4">
+        {error && <p className="rounded-lg bg-bad-light p-2 text-sm text-bad">{error}</p>}
+
+        <div>
+          <label className="label">Template image</label>
+          <input
+            type="file"
+            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+            className="input"
+            onChange={(e) => {
+              setPreviewLoaded(false);
+              setFile(e.target.files?.[0] || null);
+            }}
+          />
+          <p className="mt-1 text-xs text-steel">Drag the name and QR to position them. Drag a corner handle to resize.</p>
+        </div>
+
+        <div ref={previewViewportRef} className="max-h-[55vh] overflow-auto rounded-lg border border-mist bg-mist-100 p-3 text-center">
+          {uploadPreviewUrl || templateUrl ? (
+            <div
+              className="relative mx-auto inline-block align-top"
+              style={{ width: `${previewSize.width * zoom}px`, height: `${previewSize.height * zoom}px` }}
+            >
+              <img
+                ref={imageRef}
+                src={uploadPreviewUrl || templateUrl}
+                alt="Card template preview"
+                className="pointer-events-none absolute left-0 top-0 block max-w-none select-none"
+                style={{ width: `${previewSize.width * zoom}px`, height: `${previewSize.height * zoom}px` }}
+                draggable="false"
+                onLoad={onImageLoad}
+              />
+              {previewSize.width > 0 && (
+                <>
+                  <div
+                    role="group"
+                    tabIndex={0}
+                    aria-label="Guest name position. Use arrow keys to move one image pixel, or Shift plus an arrow to move ten pixels. Drag to position; drag the corner to resize."
+                    onKeyDown={onOverlayKeyDown('name')}
+                    onPointerDown={startDrag('name')}
+                    className="absolute flex cursor-move select-none touch-none items-center justify-center border-2 border-dashed border-teal bg-teal/15 text-ink shadow-sm"
+                    style={{
+                      left: `${form.name_x * previewSize.width * zoom / previewSize.naturalWidth}px`,
+                      top: `${form.name_y * previewSize.height * zoom / previewSize.naturalHeight}px`,
+                      width: `${form.name_width * previewSize.width * zoom / previewSize.naturalWidth}px`,
+                      height: `${form.name_font_size * 1.5 * previewSize.height * zoom / previewSize.naturalHeight}px`,
+                      transform: 'translate(-50%, -100%)',
+                      fontSize: `${form.name_font_size * previewSize.height * zoom / previewSize.naturalHeight}px`,
+                      lineHeight: 1,
+                    }}
+                  >
+                    <span className="pointer-events-none overflow-hidden text-ellipsis whitespace-nowrap px-1">Guest Name</span>
+                    <button
+                      type="button"
+                      aria-label="Resize guest name"
+                      onPointerDown={startDrag('resize-name')}
+                      className="absolute -bottom-2 -right-2 h-4 w-4 cursor-nwse-resize rounded-sm border-2 border-white bg-teal shadow"
+                    />
+                  </div>
+                  <div
+                    role="group"
+                    tabIndex={0}
+                    aria-label="QR code position. Use arrow keys to move one image pixel, or Shift plus an arrow to move ten pixels. Drag to position; drag the corner to resize."
+                    onKeyDown={onOverlayKeyDown('qr')}
+                    onPointerDown={startDrag('qr')}
+                    className="absolute cursor-move touch-none border-2 border-dashed border-violet-600 bg-white/70 shadow-sm"
+                    style={{
+                      left: `${form.qr_x * previewSize.width * zoom / previewSize.naturalWidth}px`,
+                      top: `${form.qr_y * previewSize.height * zoom / previewSize.naturalHeight}px`,
+                      width: `${form.qr_size * previewSize.width * zoom / previewSize.naturalWidth}px`,
+                      height: `${form.qr_size * previewSize.height * zoom / previewSize.naturalHeight}px`,
+                    }}
+                  >
+                    <QRCodeSVG value="GUEST-QR" className="pointer-events-none h-full w-full p-[8%]" />
+                    <button
+                      type="button"
+                      aria-label="Resize QR code"
+                      onPointerDown={startDrag('resize-qr')}
+                      className="absolute -bottom-2 -right-2 h-4 w-4 cursor-nwse-resize rounded-sm border-2 border-white bg-violet-600 shadow"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="p-10 text-sm text-steel">
+              {loadingTemplate ? 'Loading card preview…' : 'Upload an image above to preview and edit this event’s card template.'}
+            </p>
+          )}
+        </div>
+
+        {previewLoaded && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-steel-dark">Preview zoom</span>
+                <button type="button" className="btn btn-secondary px-3" aria-label="Zoom out" disabled={zoom <= 0.5} onClick={() => setZoom((value) => Math.max(0.5, Number((value - 0.25).toFixed(2))))}>−</button>
+                <span className="min-w-12 text-center text-sm tabular-nums">{Math.round(zoom * 100)}%</span>
+                <button type="button" className="btn btn-secondary px-3" aria-label="Zoom in" disabled={zoom >= 3} onClick={() => setZoom((value) => Math.min(3, Number((value + 0.25).toFixed(2))))}>+</button>
+                <button type="button" className="text-sm text-teal-dark hover:underline" onClick={() => setZoom(1)}>Reset</button>
+              </div>
+              <p className="text-xs text-steel">Focus a name or QR overlay and use arrow keys: 1 image pixel per press, Shift + arrow for 10.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+              <NudgeControls label="Move name" onMove={(dx, dy) => moveOverlay('name', dx, dy)} />
+              <NudgeControls label="Move QR" onMove={(dx, dy) => moveOverlay('qr', dx, dy)} />
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-steel">The QR overlay is a preview marker; generated cards will contain each guest’s actual scannable QR code.</p>
+        <div className="flex justify-between gap-2 pt-1">
+          <button type="button" className="btn btn-secondary text-bad" disabled={busy || !event?.card_template_path} onClick={reset}>Reset template</button>
+          <div className="flex gap-2">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" disabled={busy || !previewLoaded || !(uploadPreviewUrl || templateUrl)}>{busy ? 'Saving…' : 'Save settings'}</button>
+          </div>
         </div>
       </form>
     </Modal>
@@ -191,6 +573,7 @@ export default function EventDetail() {
         <div className="mt-3 flex flex-wrap gap-2">
           <button className="btn btn-secondary" disabled={busy === 'pin'} onClick={() => confirm('Create a new PIN? The old one stops working.') && run('pin', async () => { const r = await api.post(`/admin/events/${id}/reset-pin`, {}, 'admin'); setEvent(r.event); setNewPin(r.pin); })}>Reset PIN</button>
           <button className="btn btn-secondary" disabled={busy === 'link'} onClick={() => confirm('Create a new link? The old link stops working immediately.') && run('link', async () => setEvent(await api.post(`/admin/events/${id}/regenerate-link`, {}, 'admin')))}>New link</button>
+          <button className="btn btn-secondary" onClick={() => setModal({ type: 'template' })}>Card template</button>
         </div>
       </section>
 
@@ -281,6 +664,21 @@ export default function EventDetail() {
 
       {/* Modals */}
       {modal?.type === 'guest' && <GuestModal guest={modal.guest} onSave={saveGuest} onClose={() => setModal(null)} />}
+
+      {modal?.type === 'template' && (
+        <TemplateModal
+          event={event}
+          onClose={() => setModal(null)}
+          onSave={async (fd) => {
+            const data = await api.upload(`/admin/events/${id}/card-template`, fd, 'admin');
+            setEvent(data.event); setModal(null);
+          }}
+          onReset={async () => {
+            const data = await api.post(`/admin/events/${id}/card-template/reset`, {}, 'admin');
+            setEvent(data.event); setModal(null);
+          }}
+        />
+      )}
 
       {modal?.type === 'editEvent' && (
         <Modal title="Edit event" onClose={() => setModal(null)} wide>

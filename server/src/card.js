@@ -1,6 +1,4 @@
-// Draws a guest's invitation card: the design in assets/card/background.jpg
-// + the guest's NAME on the dotted line + their QR code inside the outlined square.
-// Everything else on the card stays exactly as designed.
+// Draws a guest's invitation card from their event's uploaded template.
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
@@ -8,49 +6,59 @@ import QRCode from 'qrcode';
 
 const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../assets/card');
 
-// ---- Layout, in the design's own units (the card is 397 x 559, i.e. A6) ----
-const CARD = { w: 397, h: 559 };
-const SCALE = 3;                                   // output = 1191 x 1677 px (about 290 dpi at A6)
-const NAME = {
-  centerX: 207.7,                                  // middle of the dotted line
-  baseline: 169.3,                                 // sits just above the dots
-  maxWidth: 200,                                   // the dotted line is 208 wide
-  maxSize: 16, minSize: 8,
-  color: '#3b291e',                                // same brown as the card's own wording
+const DEFAULT_LAYOUT = {
+  nameX: 623.1,
+  nameY: 507.9,
+  nameWidth: 600,
+  nameSize: 48,
+  qrX: 549,
+  qrY: 1250,
+  qrSize: 165,
 };
-const QR_BOX = { x: 183, y: 416.673, size: 55 };   // the outlined square in the design
+
+const CARD = { w: 397, h: 559 };
+const SCALE = 3;
+const NAME_COLOR = '#3b291e';
 const QR_COLOR = '#1a1412';
-const SHOW_ID = true;                              // print the ID under the QR (for typing it in by hand)
+const SHOW_ID = true;
 const ID_TEXT = { baseline: 481, size: 7.5, spacing: 1.4, color: '#916461' };
 const JPEG_QUALITY = 90;
 
 GlobalFonts.registerFromPath(path.join(dir, 'fonts/CormorantGaramond_600SemiBold_Italic.ttf'), 'CardName');
 GlobalFonts.registerFromPath(path.join(dir, 'fonts/SourceSans3_600SemiBold.ttf'), 'CardId');
 
-let background = null;
-const getBackground = async () => (background ||= await loadImage(path.join(dir, 'background.jpg')));
-
-/** Shrinks the name until it fits on the line; as a last resort cuts it with "…" */
-function fitName(ctx, rawName) {
-  let text = String(rawName || '').replace(/\s+/g, ' ').trim();
-  for (let size = NAME.maxSize; size >= NAME.minSize; size -= 0.25) {
-    ctx.font = `${size * SCALE}px CardName`;
-    if (ctx.measureText(text).width <= NAME.maxWidth * SCALE) return { text, size };
-  }
-  ctx.font = `${NAME.minSize * SCALE}px CardName`;
-  while (text.length > 1 && ctx.measureText(`${text}…`).width > NAME.maxWidth * SCALE) text = text.slice(0, -1).trimEnd();
-  return { text: `${text}…`, size: NAME.minSize };
+function normalizeLayout(layout = {}) {
+  const values = { ...DEFAULT_LAYOUT, ...(layout || {}) };
+  return {
+    nameX: Number(values.card_name_x ?? values.nameX ?? DEFAULT_LAYOUT.nameX),
+    nameY: Number(values.card_name_y ?? values.nameY ?? DEFAULT_LAYOUT.nameY),
+    nameWidth: Number(values.card_name_width ?? values.nameWidth ?? DEFAULT_LAYOUT.nameWidth),
+    nameSize: Number(values.card_name_font_size ?? values.nameSize ?? DEFAULT_LAYOUT.nameSize),
+    qrX: Number(values.card_qr_x ?? values.qrX ?? DEFAULT_LAYOUT.qrX),
+    qrY: Number(values.card_qr_y ?? values.qrY ?? DEFAULT_LAYOUT.qrY),
+    qrSize: Number(values.card_qr_size ?? values.qrSize ?? DEFAULT_LAYOUT.qrSize),
+  };
 }
 
-/** QR modules drawn as crisp squares on whole pixels (so phones read it easily) */
-function drawQr(ctx, code) {
+function fitName(ctx, rawName, maxWidth, maxSize, minSize = 8) {
+  let text = String(rawName || '').replace(/\s+/g, ' ').trim();
+  for (let size = maxSize; size >= minSize; size -= 0.25) {
+    ctx.font = `${size}px CardName`;
+    if (ctx.measureText(text).width <= maxWidth) return { text, size };
+  }
+  ctx.font = `${minSize}px CardName`;
+  while (text.length > 1 && ctx.measureText(`${text}…`).width > maxWidth) text = text.slice(0, -1).trimEnd();
+  return { text: `${text}…`, size: minSize };
+}
+
+function drawQr(ctx, code, qrX, qrY, qrSize) {
   const qr = QRCode.create(code, { errorCorrectionLevel: 'M' });
   const n = qr.modules.size;
-  const boxPx = QR_BOX.size * SCALE - 3;           // a little less than the square, so the outline stays clear
-  const cell = Math.max(2, Math.floor(boxPx / (n + 4)));   // keeps at least 2 empty modules around it
+  const boxPx = qrSize - 3;
+  const cell = Math.max(2, Math.floor(boxPx / (n + 4)));
   const total = cell * n;
-  const startX = Math.round((QR_BOX.x + QR_BOX.size / 2) * SCALE - total / 2);
-  const startY = Math.round((QR_BOX.y + QR_BOX.size / 2) * SCALE - total / 2);
+  const startX = Math.round(qrX + qrSize / 2 - total / 2);
+  const startY = Math.round(qrY + qrSize / 2 - total / 2);
   ctx.fillStyle = QR_COLOR;
   for (let r = 0; r < n; r++) {
     for (let c = 0; c < n; c++) {
@@ -59,7 +67,6 @@ function drawQr(ctx, code) {
   }
 }
 
-/** Letters spaced out a little, centred on x */
 function drawSpaced(ctx, text, centerX, y, spacing) {
   const widths = [...text].map((ch) => ctx.measureText(ch).width);
   const total = widths.reduce((a, b) => a + b, 0) + spacing * (text.length - 1);
@@ -67,29 +74,31 @@ function drawSpaced(ctx, text, centerX, y, spacing) {
   [...text].forEach((ch, i) => { ctx.fillText(ch, x, y); x += widths[i] + spacing; });
 }
 
-/** Returns a JPEG (Buffer) of the finished card */
-export async function renderCard({ name, code }) {
-  const canvas = createCanvas(CARD.w * SCALE, CARD.h * SCALE);
+export async function renderCard({ name, code, templatePath, layout = {} }) {
+  if (!templatePath) throw new Error('Upload a card template for this event before generating cards');
+  const resolvedLayout = normalizeLayout(layout);
+  const sourceImage = await loadImage(path.resolve(templatePath));
+  const width = sourceImage.width || CARD.w;
+  const height = sourceImage.height || CARD.h;
+  const canvas = createCanvas(width, height);
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(await getBackground(), 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(sourceImage, 0, 0, width, height);
 
-  // Guest name (centred on the dotted line)
-  const { text, size } = fitName(ctx, name);
-  ctx.font = `${size * SCALE}px CardName`;
-  ctx.fillStyle = NAME.color;
+  const maxWidth = Number.isFinite(resolvedLayout.nameWidth) ? resolvedLayout.nameWidth : DEFAULT_LAYOUT.nameWidth;
+  const { text, size } = fitName(ctx, name, maxWidth, resolvedLayout.nameSize, Math.max(8, resolvedLayout.nameSize * 0.45));
+  ctx.font = `${size}px CardName`;
+  ctx.fillStyle = NAME_COLOR;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillText(text, NAME.centerX * SCALE, NAME.baseline * SCALE);
+  ctx.fillText(text, resolvedLayout.nameX, resolvedLayout.nameY);
 
-  // QR code inside the outlined square
-  drawQr(ctx, code);
+  drawQr(ctx, code, resolvedLayout.qrX, resolvedLayout.qrY, resolvedLayout.qrSize);
 
-  // ID under the QR
   if (SHOW_ID) {
-    ctx.font = `${ID_TEXT.size * SCALE}px CardId`;
+    ctx.font = `${ID_TEXT.size}px CardId`;
     ctx.fillStyle = ID_TEXT.color;
     ctx.textAlign = 'left';
-    drawSpaced(ctx, code, (QR_BOX.x + QR_BOX.size / 2) * SCALE, ID_TEXT.baseline * SCALE, ID_TEXT.spacing * SCALE);
+    drawSpaced(ctx, code, resolvedLayout.qrX + resolvedLayout.qrSize / 2, resolvedLayout.qrY + resolvedLayout.qrSize + 30, ID_TEXT.spacing);
   }
 
   return canvas.toBuffer('image/jpeg', JPEG_QUALITY);
