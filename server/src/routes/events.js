@@ -50,6 +50,7 @@ const present = (e) => {
     card_name_y: e.card_name_y == null ? null : Number(e.card_name_y),
     card_name_width: e.card_name_width == null ? null : Number(e.card_name_width),
     card_name_font_size: e.card_name_font_size == null ? null : Number(e.card_name_font_size),
+    card_name_color: e.card_name_color || '#3b291e',
     card_qr_x: e.card_qr_x == null ? null : Number(e.card_qr_x),
     card_qr_y: e.card_qr_y == null ? null : Number(e.card_qr_y),
     card_qr_size: e.card_qr_size == null ? null : Number(e.card_qr_size),
@@ -200,8 +201,12 @@ router.post('/events/:id/card-template', templateUpload.single('image'), async (
     };
     const fontFamily = clean(req.body.name_font_family, 100);
     const fontVariant = clean(req.body.name_font_variant, 32);
+    const nameColor = req.body.name_color ?? '#3b291e';
     if ((fontFamily && !fontVariant) || (!fontFamily && fontVariant)) {
       return res.status(400).json({ error: 'Choose both a Google font and its style' });
+    }
+    if (typeof nameColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(nameColor)) {
+      return res.status(400).json({ error: 'Guest name color must be a six-digit hex color' });
     }
     if (!Number.isFinite(nextLayout.name_font_size) || nextLayout.name_font_size < 8 || nextLayout.name_font_size > 160) {
       return res.status(400).json({ error: 'Guest name font size must be between 8 and 160 pixels' });
@@ -228,7 +233,7 @@ router.post('/events/:id/card-template', templateUpload.single('image'), async (
 
     try {
       await pool.query(
-        `UPDATE events SET card_template_path = ?, card_name_x = ?, card_name_y = ?, card_name_width = ?, card_name_font_size = ?, card_name_font_family = ?, card_name_font_variant = ?, card_qr_x = ?, card_qr_y = ?, card_qr_size = ? WHERE id = ?`,
+        `UPDATE events SET card_template_path = ?, card_name_x = ?, card_name_y = ?, card_name_width = ?, card_name_font_size = ?, card_name_font_family = ?, card_name_font_variant = ?, card_name_color = ?, card_qr_x = ?, card_qr_y = ?, card_qr_size = ? WHERE id = ?`,
         [
           relativePath,
           nextLayout.name_x,
@@ -237,6 +242,7 @@ router.post('/events/:id/card-template', templateUpload.single('image'), async (
           nextLayout.name_font_size,
           fontFamily,
           fontVariant,
+          nameColor,
           nextLayout.qr_x,
           nextLayout.qr_y,
           nextLayout.qr_size,
@@ -269,7 +275,7 @@ router.post('/events/:id/card-template/reset', async (req, res, next) => {
     }
 
     await pool.query(
-      `UPDATE events SET card_template_path = NULL, card_name_x = NULL, card_name_y = NULL, card_name_width = NULL, card_name_font_size = NULL, card_name_font_family = NULL, card_name_font_variant = NULL, card_qr_x = NULL, card_qr_y = NULL, card_qr_size = NULL WHERE id = ?`,
+      `UPDATE events SET card_template_path = NULL, card_name_x = NULL, card_name_y = NULL, card_name_width = NULL, card_name_font_size = NULL, card_name_font_family = NULL, card_name_font_variant = NULL, card_name_color = NULL, card_qr_x = NULL, card_qr_y = NULL, card_qr_size = NULL WHERE id = ?`,
       [req.params.id],
     );
 

@@ -35,6 +35,7 @@ function normalizeLayout(layout = {}) {
     nameY: Number(values.card_name_y ?? values.nameY ?? DEFAULT_LAYOUT.nameY),
     nameWidth: Number(values.card_name_width ?? values.nameWidth ?? DEFAULT_LAYOUT.nameWidth),
     nameSize: Number(values.card_name_font_size ?? values.nameSize ?? DEFAULT_LAYOUT.nameSize),
+    nameColor: /^#[0-9a-f]{6}$/i.test(values.card_name_color ?? '') ? values.card_name_color : NAME_COLOR,
     qrX: Number(values.card_qr_x ?? values.qrX ?? DEFAULT_LAYOUT.qrX),
     qrY: Number(values.card_qr_y ?? values.qrY ?? DEFAULT_LAYOUT.qrY),
     qrSize: Number(values.card_qr_size ?? values.qrSize ?? DEFAULT_LAYOUT.qrSize),
@@ -91,7 +92,7 @@ export async function renderCard({ name, code, templatePath, layout = {} }) {
   const maxWidth = Number.isFinite(resolvedLayout.nameWidth) ? resolvedLayout.nameWidth : DEFAULT_LAYOUT.nameWidth;
   const { text, size } = fitName(ctx, name, maxWidth, resolvedLayout.nameSize, fontFace, Math.max(8, resolvedLayout.nameSize * 0.45));
   ctx.font = `${size}px "${fontFace}"`;
-  ctx.fillStyle = NAME_COLOR;
+  ctx.fillStyle = resolvedLayout.nameColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.fillText(text, resolvedLayout.nameX, resolvedLayout.nameY);

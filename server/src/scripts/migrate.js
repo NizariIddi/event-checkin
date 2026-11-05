@@ -60,6 +60,7 @@ await addColumn("events", "card_name_width", "card_name_width DECIMAL(8,2) NULL 
 await addColumn("events", "card_name_font_size", "card_name_font_size DECIMAL(8,2) NULL AFTER card_name_width");
 await addColumn("events", "card_name_font_family", "card_name_font_family VARCHAR(100) NULL AFTER card_name_font_size");
 await addColumn("events", "card_name_font_variant", "card_name_font_variant VARCHAR(32) NULL AFTER card_name_font_family");
+await addColumn("events", "card_name_color", "card_name_color CHAR(7) NULL AFTER card_name_font_variant");
 await addColumn("events", "card_qr_x", "card_qr_x DECIMAL(8,2) NULL AFTER card_name_font_size");
 await addColumn("events", "card_qr_y", "card_qr_y DECIMAL(8,2) NULL AFTER card_qr_x");
 await addColumn("events", "card_qr_size", "card_qr_size DECIMAL(8,2) NULL AFTER card_qr_y");

@@ -414,7 +414,7 @@ router.get("/events/:id/qr.zip", async (req, res, next) => {
 router.get("/guests/:id/card.jpg", async (req, res, next) => {
   try {
     const [rows] = await pool.query(
-      "SELECT g.code, g.full_name, e.card_template_path, e.card_name_x, e.card_name_y, e.card_name_width, e.card_name_font_size, e.card_name_font_family, e.card_name_font_variant, e.card_qr_x, e.card_qr_y, e.card_qr_size FROM guests g LEFT JOIN events e ON e.id = g.event_id WHERE g.id = ?",
+      "SELECT g.code, g.full_name, e.card_template_path, e.card_name_x, e.card_name_y, e.card_name_width, e.card_name_font_size, e.card_name_font_family, e.card_name_font_variant, e.card_name_color, e.card_qr_x, e.card_qr_y, e.card_qr_size FROM guests g LEFT JOIN events e ON e.id = g.event_id WHERE g.id = ?",
       [req.params.id],
     );
 
@@ -434,6 +434,7 @@ router.get("/guests/:id/card.jpg", async (req, res, next) => {
         card_name_font_size: rows[0].card_name_font_size,
         card_name_font_family: rows[0].card_name_font_family,
         card_name_font_variant: rows[0].card_name_font_variant,
+        card_name_color: rows[0].card_name_color,
         card_qr_x: rows[0].card_qr_x,
         card_qr_y: rows[0].card_qr_y,
         card_qr_size: rows[0].card_qr_size,
@@ -460,7 +461,7 @@ router.get("/events/:id/cards.zip", async (req, res, next) => {
     }
 
     const [guests] = await pool.query(
-      "SELECT g.code, g.full_name, e.card_template_path, e.card_name_x, e.card_name_y, e.card_name_width, e.card_name_font_size, e.card_name_font_family, e.card_name_font_variant, e.card_qr_x, e.card_qr_y, e.card_qr_size FROM guests g LEFT JOIN events e ON e.id = g.event_id WHERE g.event_id = ? ORDER BY g.full_name",
+      "SELECT g.code, g.full_name, e.card_template_path, e.card_name_x, e.card_name_y, e.card_name_width, e.card_name_font_size, e.card_name_font_family, e.card_name_font_variant, e.card_name_color, e.card_qr_x, e.card_qr_y, e.card_qr_size FROM guests g LEFT JOIN events e ON e.id = g.event_id WHERE g.event_id = ? ORDER BY g.full_name",
       [req.params.id],
     );
 
@@ -483,6 +484,7 @@ router.get("/events/:id/cards.zip", async (req, res, next) => {
           card_name_font_size: g.card_name_font_size,
           card_name_font_family: g.card_name_font_family,
           card_name_font_variant: g.card_name_font_variant,
+          card_name_color: g.card_name_color,
           card_qr_x: g.card_qr_x,
           card_qr_y: g.card_qr_y,
           card_qr_size: g.card_qr_size,

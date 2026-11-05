@@ -12,6 +12,12 @@ const Stat = ({ label, value, tone = 'text-ink' }) => (
   <div className="card p-4"><p className="text-xs font-semibold uppercase tracking-wide text-steel">{label}</p><p className={`mt-1 text-3xl font-bold ${tone}`}>{value}</p></div>
 );
 
+const NAME_COLOR_PALETTE = [
+  '#3b291e', '#1f2937', '#000000', '#ffffff', '#7f1d1d',
+  '#c2410c', '#a16207', '#166534', '#0f766e', '#1d4ed8',
+  '#6d28d9', '#be185d',
+];
+
 function GuestModal({ guest, onSave, onClose }) {
   const [f, setF] = useState({ full_name: '', phone: '', category: '', table_no: '', card_type: 'single', ...(guest || {}) });
   const [busy, setBusy] = useState(false);
@@ -116,11 +122,13 @@ function TemplateModal({ event, onClose, onSave, onReset }) {
     name_font_size: event?.card_name_font_size ?? 48,
     name_font_family: event?.card_name_font_family ?? '',
     name_font_variant: event?.card_name_font_variant ?? '',
+    name_color: event?.card_name_color ?? '#3b291e',
     qr_x: event?.card_qr_x ?? 549,
     qr_y: event?.card_qr_y ?? 1250,
     qr_size: event?.card_qr_size ?? 165,
   };
   const [form, setForm] = useState(defaults);
+  const [colorHexInput, setColorHexInput] = useState(defaults.name_color);
   const [file, setFile] = useState(null);
   const [templateUrl, setTemplateUrl] = useState('');
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState('');
@@ -391,7 +399,7 @@ function TemplateModal({ event, onClose, onSave, onReset }) {
           <p className="mt-1 text-xs text-steel">Drag the name and QR to position them. Drag a corner handle to resize.</p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="relative">
             <label className="label" htmlFor="guest-name-font">Font Family</label>
             <input
@@ -532,7 +540,75 @@ function TemplateModal({ event, onClose, onSave, onReset }) {
               required
             />
           </div>
-          {fontError && <p className="text-sm text-bad sm:col-span-3">{fontError}. The existing default font can still be used.</p>}
+          <div>
+            <label className="label" htmlFor="guest-name-color">Guest name color</label>
+            <div className="flex items-center gap-2">
+              <input
+                id="guest-name-color"
+                type="color"
+                className="h-10 w-12 cursor-pointer rounded border border-mist-300 bg-white p-1"
+                value={form.name_color}
+                aria-label="Choose a custom guest name color"
+                onChange={(e) => {
+                  setColorHexInput(e.target.value);
+                  setForm((current) => ({ ...current, name_color: e.target.value }));
+                }}
+              />
+              <input
+                id="guest-name-color-hex"
+                type="text"
+                className="input max-w-32 font-mono uppercase"
+                value={colorHexInput}
+                aria-label="Guest name color hex code"
+                aria-describedby="guest-name-color-hex-help"
+                autoComplete="off"
+                spellCheck="false"
+                inputMode="text"
+                maxLength={7}
+                pattern="#?[0-9a-fA-F]{6}"
+                title="Enter a six-digit hex color, with or without the #"
+                required
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setColorHexInput(value);
+                  if (/^#?[0-9a-fA-F]{6}$/.test(value)) {
+                    setForm((current) => ({
+                      ...current,
+                      name_color: value.startsWith("#") ? value : `#${value}`,
+                    }));
+                  }
+                }}
+                onBlur={() => {
+                  if (/^#?[0-9a-fA-F]{6}$/.test(colorHexInput)) {
+                    const color = colorHexInput.startsWith("#")
+                      ? colorHexInput
+                      : `#${colorHexInput}`;
+                    setColorHexInput(color);
+                    setForm((current) => ({ ...current, name_color: color }));
+                  }
+                }}
+              />
+            </div>
+            <p id="guest-name-color-hex-help" className="mt-1 text-xs text-steel">Enter a six-digit hex code, with or without #.</p>
+            <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Guest name color palette">
+              {NAME_COLOR_PALETTE.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  aria-label={`Set guest name color to ${color}`}
+                  aria-pressed={form.name_color.toLowerCase() === color}
+                  title={color}
+                  onClick={() => {
+                    setColorHexInput(color);
+                    setForm((current) => ({ ...current, name_color: color }));
+                  }}
+                  className={`h-7 w-7 rounded-full border border-mist-300 ${form.name_color.toLowerCase() === color ? 'ring-2 ring-teal ring-offset-2' : ''}`}
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
+          </div>
+          {fontError && <p className="text-sm text-bad sm:col-span-2 lg:col-span-4">{fontError}. The existing default font can still be used.</p>}
         </div>
 
         <div ref={previewViewportRef} className="max-h-[40dvh] overflow-auto rounded-lg border border-mist bg-mist-100 p-2 text-center sm:max-h-[55vh] sm:p-3">
@@ -571,7 +647,7 @@ function TemplateModal({ event, onClose, onSave, onReset }) {
                   >
                     <span
                       className="pointer-events-none overflow-hidden text-ellipsis whitespace-nowrap px-1"
-                      style={{ fontFamily: `"${previewFontFamily}"`, fontStyle: previewFontItalic ? 'italic' : 'normal', fontWeight: previewFontWeight }}
+                      style={{ color: form.name_color, fontFamily: `"${previewFontFamily}"`, fontStyle: previewFontItalic ? 'italic' : 'normal', fontWeight: previewFontWeight }}
                     >
                       Guest Name
                     </span>
